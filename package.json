@@ -1,0 +1,29 @@
+{
+    "name": "roundtable-master-service",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@8.15.4",
+    "engines": {
+        "node": ">=20"
+    },
+    "scripts": {
+        "dev": "tsx watch src/server.ts",
+        "build": "tsc && tsc-alias",
+        "start": "node dist/server.js",
+        "start:pm2": "pm2-runtime ecosystem.config.cjs",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@fastify/cors": "^8.4.0",
+        "fastify": "^4.26.2",
+        "pm2": "^5.3.1",
+        "zod": "^3.22.4"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.5",
+        "tsc-alias": "^1.8.8",
+        "tsx": "^4.7.0",
+        "typescript": "^5.3.3"
+    }
+}
