@@ -7,7 +7,7 @@ export type LLMMessage = {
 
 export type LLMMode = "analyst" | "builder" | "critic";
 
-export type ProviderName = "openai" | "anthropic" | "dummy";
+export type ProviderName = "openai" | "anthropic" | "grok" | "dummy";
 
 export type LLMRequest = {
     provider?: ProviderName;

@@ -1,0 +1,62 @@
+{
+    "providers": {
+        "openai": {
+            "defaultModel": "gpt-4o-mini"
+        },
+        "anthropic": {
+            "defaultModel": "claude-3-5-sonnet-latest"
+        },
+        "grok": {
+            "defaultModel": "grok-2-latest"
+        }
+    },
+    "agents": {
+        "analyst": {
+            "provider": "openai"
+        },
+        "builder": {
+            "provider": "openai"
+        },
+        "critic": {
+            "provider": "openai"
+        }
+    },
+    "weights": {
+        "PROMPT_ENGINEERING": {
+            "gpt-5.2-promptsmith": 0.52,
+            "solver-opus": 0.2,
+            "adversary-sonnet": 0.15,
+            "verifier-haiku": 0.1,
+            "grok-wildcard": 0.03,
+            "implementer-sonnet": 0.0
+        },
+        "VERBAL_REASONING": {
+            "solver-opus": 0.33,
+            "gpt-5.2-promptsmith": 0.24,
+            "adversary-sonnet": 0.2,
+            "implementer-sonnet": 0.1,
+            "verifier-haiku": 0.08,
+            "grok-wildcard": 0.05
+        },
+        "TECHNICAL_EXECUTION": {
+            "implementer-sonnet": 0.38,
+            "solver-opus": 0.23,
+            "adversary-sonnet": 0.2,
+            "verifier-haiku": 0.11,
+            "gpt-5.2-promptsmith": 0.03,
+            "grok-wildcard": 0.05
+        },
+        "VISUAL_ANALYSIS": {
+            "visual-sonnet": 0.42,
+            "solver-opus": 0.2,
+            "adversary-sonnet": 0.15,
+            "verifier-haiku": 0.18,
+            "gpt-5.2-promptsmith": 0.05,
+            "grok-wildcard": 0.0
+        }
+    },
+    "invalidation": {
+        "hard": 0.45,
+        "soft": 0.6
+    }
+}

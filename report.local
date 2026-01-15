@@ -1,190 +1,80 @@
-# RoundTable Master Service — System Report
+## Models: Master vs Specialists
+### Master
+- The master service does not run a model directly. It is an HTTP orchestrator that routes requests to specialists (agents) and aggregates their outputs.
 
-## Purpose
-HTTP “Master” service that accepts Discord bot requests and returns normalized replies. Implements minimal agent orchestration and a pluggable LLM backend with a deterministic fallback.
+### Specialists (Agents)
+- Analyst, Builder, Critic are the specialists.
+- Each specialist calls callLLM with its mode and messages.
+- Provider selection and per-agent model overrides are read from llm.config.json. If unset, auto-picks based on available keys.
 
-## Tech Stack
-- Runtime: Node 20+, TypeScript (ESM)
-- Server: Fastify + Zod
-- Package manager: pnpm
-- Optional process manager: PM2 (cluster mode)
-
-## Entry Points
-- Server: [src/server.ts](src/server.ts)
-- Agent orchestration: [src/agents/](src/agents/)
-- LLM abstraction: [src/llm/ensemble.ts](src/llm/ensemble.ts)
-
-## API Contract
-### POST /api/chat
-Request JSON:
-{
-	"source": "discord",
-	"user": { "id": "123456789", "name": "username" },
-	"context": { "channelId": "...", "guildId": "..." },
-	"message": "user's message text"
-}
-
-Auth:
-- If MASTER_API_KEY is set, require Authorization: Bearer <MASTER_API_KEY>
-- If MASTER_API_KEY is not set, allow unauthenticated requests
-
-Response:
-- Always returns JSON { "reply": "<string>" }
-- Normalizes any downstream output into { reply }
-
-Validation:
-- Zod schema enforces required fields and rejects unknown keys
-- Invalid payloads return 400
-- Invalid/missing auth when key is set returns 401
-
-### GET /health
-Response: { ok: true }
-
-## Orchestration Flow
-1) Request accepted and validated
-2) Discord context normalized to: "Discord context: guildId=<...>, channelId=<...>"
-3) Router selects agents (always includes critic)
-4) Runner executes agents in parallel with timeout and concurrency guard
-5) Aggregator scores outputs and selects best response
-6) API returns { reply }
-
-## Agent System
-### Agent Types
-- AgentName: analyst | builder | critic
-- AgentOutput: { agent, confidence, risk, content, bullets? }
-
-### Router
-- Always includes: analyst, builder, critic
-- Implementation: [src/agents/router.ts](src/agents/router.ts)
-
-### Runner
-- Concurrency default: 2
-- Timeout default: 4500ms
-- Logs per-agent timings
-- Implementation: [src/agents/runner.ts](src/agents/runner.ts)
-
-### Aggregator
-- Invalidation thresholds:
-	- soft = 0.45
-	- hard = 0.60
-- If risk >= 0.60 AND confidence <= 0.45, output is invalid
-- Score = confidence - 0.75 * risk
-- Picks highest score; fallback to first valid or generic response
-- Implementation: [src/agents/aggregate.ts](src/agents/aggregate.ts)
-
-### Agent Implementations
-- analyst: summarizes user intent/risks
-- builder: generates concise reply
-- critic: safety and alignment check
-- Implementations:
-	- [src/agents/agents/analyst.ts](src/agents/agents/analyst.ts)
-	- [src/agents/agents/builder.ts](src/agents/agents/builder.ts)
-	- [src/agents/agents/critic.ts](src/agents/agents/critic.ts)
-
-## LLM Abstraction
-File: [src/llm/ensemble.ts](src/llm/ensemble.ts)
-
-Behavior:
-- callLLM({ mode, messages }) returns string
-- If OPENAI_API_KEY is present, calls OpenAI Chat Completions
-- If OpenAI fails or key absent, returns deterministic dummy response: "[mode] <last user preview>"
-
-Notes:
-- OpenAI model used: gpt-4o-mini
-- Safe fallback avoids hard dependency on external keys
-
-## Observability
-- Logs requestId, routing plan, and per-agent timing
-- Does not log Authorization tokens
-- Fastify logging with LOG_LEVEL
-
-## Environment Variables
-- PORT (default 8000)
-- MASTER_API_KEY (optional)
-- OPENAI_API_KEY (optional)
-- LOG_LEVEL (optional)
-
-## Build & Run Scripts
-From [package.json](package.json):
-- dev: tsx watch src/server.ts
-- build: tsc && tsc-alias
-- start: node dist/server.js
-- start:pm2: pm2-runtime ecosystem.config.cjs
-- typecheck: tsc --noEmit
-
-## TypeScript Configuration
-From [tsconfig.json](tsconfig.json):
-- module/moduleResolution: NodeNext
-- paths alias: @/* -> src/*
-- ESM imports use .js extension in source for NodeNext output
-
-## Docker
-Dockerfile: [Dockerfile](Dockerfile)
-- Multi-stage build
-- Production image installs only prod deps
-- HEALTHCHECK on /health
-- CMD uses pnpm start:pm2
-
-Important note:
-- Dockerfile expects ecosystem.config.cjs, but it is not present in repo root. Create it before building if PM2 is required.
-
-## PM2 Cluster (Expected)
-If ecosystem.config.cjs is added:
-- Cluster mode across CPU cores
-- Auto-restart on failure
-- Suitable for zero-downtime restarts
-
-## Recent Tests (Local)
-- GET /health -> 200 { ok: true }
-- POST /api/chat (valid) -> 200 { reply: "..." }
-- POST /api/chat (invalid) -> 400
-- With MASTER_API_KEY set:
-	- missing auth -> 401
-	- wrong auth -> 401
-	- correct auth -> 200
-
-## Integration Notes for “Specialists”
-To add a new specialist agent:
-1) Create agent file in src/agents/agents/
-2) Add new AgentName in src/agents/types.ts
-3) Register in src/agents/registry.ts
-4) Extend router rules in src/agents/router.ts
-5) Tune confidence/risk in agent output
-
-Aggregator automatically scores and selects the best response based on confidence/risk.
-
-## LLM Adapter Layer (Pluggable Providers)
-### Providers
-- OpenAI: src/llm/providers/openai.ts
-- Anthropic: src/llm/providers/anthropic.ts
-- Dummy fallback: src/llm/providers/dummy.ts
-
-### Provider Selection
-- If request specifies provider, use it.
-- Else auto-pick: OPENAI_API_KEY -> ANTHROPIC_API_KEY -> dummy.
-- Any provider failure returns deterministic dummy output (never throws upstream).
-
-### New Environment Variables
-- ANTHROPIC_API_KEY (optional)
-- ANALYST_PROVIDER (optional: openai|anthropic|dummy)
-- BUILDER_PROVIDER (optional: openai|anthropic|dummy)
-- CRITIC_PROVIDER (optional: openai|anthropic|dummy)
-- OPENAI_MODEL_ANALYST / OPENAI_MODEL_BUILDER / OPENAI_MODEL_CRITIC (optional)
-- ANTHROPIC_MODEL_ANALYST / ANTHROPIC_MODEL_BUILDER / ANTHROPIC_MODEL_CRITIC (optional)
-
-### Provider Defaults
+### Default Models (if no per-agent model set)
 - OpenAI: gpt-4o-mini
 - Anthropic: claude-3-5-sonnet-latest
+- Grok: grok-2-latest
 
-## Guide: Adding a New Specialist + Provider
-1) Create provider adapter in src/llm/providers/<name>.ts using AbortController timeout.
-2) Extend ProviderName in src/llm/types.ts.
-3) Update src/llm/ensemble.ts to select and call the new provider.
-4) Add provider env parsing in src/config.ts.
-5) Create agent in src/agents/agents/ and register it in router + registry.
-6) Optionally add per-agent provider/model env vars for routing.
+### Where Models Are Chosen
+- Provider auto-pick in src/llm/ensemble.ts
+- Per-agent provider/model overrides in llm.config.json (loaded by src/config.ts)
+- Provider defaults in src/llm/providers/openai.ts, src/llm/providers/anthropic.ts, src/llm/providers/grok.ts
+
+## Requirements Comparison (Requested vs Repo)
+### Core Stack
+- Node 20+, TypeScript ESM NodeNext, pnpm, Fastify + Zod: ✅
+
+### API Contract
+- POST /api/chat request/response shape preserved: ✅
+- GET /health -> { ok: true }: ✅
+- Auth behavior with MASTER_API_KEY: ✅
+- Always returns JSON { reply }: ✅
+
+### Orchestration
+- Router -> Runner -> Aggregator -> Reply: ✅
+- Always includes critic: ✅
+- Runner defaults (concurrency=2, timeout=4500ms): ✅
+- Aggregator invalidation logic (risk>=0.60 && confidence<=0.45): ✅
+
+### LLM Adapter Layer
+- Providers: OpenAI, Anthropic, Grok, Dummy: ✅
+- AbortController timeout in providers: ✅
+- Auto-pick provider by keys; fallback to dummy on failure: ✅
+- No secret logging: ✅
+- Deterministic fallback always available: ✅
+
+### Env Vars
+- ANTHROPIC_API_KEY: ✅
+- XAI_API_KEY: ✅
+- Provider/model overrides moved to llm.config.json: ✅
+
+### NodeNext ESM Import Rules
+- Internal imports use .js extensions: ✅
+
+### Docker
+- Multi-stage build and healthcheck: ✅
+- Runs dist/server.js directly (no PM2 dependency): ✅
+
+## Environment Example
+- Added .env.example with all supported variables.
+
+## Environment Variables (Detailed)
+### Server
+- PORT: Port the HTTP server listens on. Default 8000.
+- LOG_LEVEL: Fastify logger level. Examples: trace, debug, info, warn, error. Default info.
+
+### Auth
+- MASTER_API_KEY: If set, POST /api/chat requires Authorization: Bearer <MASTER_API_KEY>. If unset, requests are unauthenticated.
+
+### Provider Keys
+- OPENAI_API_KEY: Enables OpenAI provider.
+- ANTHROPIC_API_KEY: Enables Anthropic provider.
+- XAI_API_KEY: Enables Grok provider.
+
+### Model/Weight Config File
+- llm.config.json controls per-agent provider, per-agent model, and weight tables.
+
+## Weighting Configuration
+- Weight tables and invalidation thresholds are defined in llm.config.json.
+- Task types included: PROMPT_ENGINEERING, VERBAL_REASONING, TECHNICAL_EXECUTION, VISUAL_ANALYSIS.
 
 ## Latest Checks
-- pnpm typecheck (tsc --noEmit)
-- pnpm build (tsc && tsc-alias)
-- Smoke test on built server: /health -> { ok: true }, /api/chat -> { reply: "[builder] hello" }
+- Docker build: roundtable-master:test
+- Docker run: /health -> { ok: true }, /api/chat -> { reply: "[builder] ping" }
