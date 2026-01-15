@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { aggregateOutputs } from "@/agents/aggregate.js";
+import { aggregateWithMaster } from "@/agents/aggregate.js";
 import { routeAgents } from "@/agents/router.js";
 import { runAgents } from "@/agents/runner.js";
 import { type AgentContext } from "@/agents/types.js";
@@ -81,7 +81,15 @@ fastify.post("/api/chat", async (request, reply) => {
         "Agent timings"
     );
 
-    const aggregated = aggregateOutputs(outputs);
+    const aggregated = await aggregateWithMaster(
+        outputs,
+        payload.message,
+        context.requestId
+    );
+    request.log.info(
+        { requestId: context.requestId, useCase: aggregated.useCase },
+        "Master categorization"
+    );
     const replyText = aggregated.reply || "I am here to help.";
 
     return { reply: replyText };

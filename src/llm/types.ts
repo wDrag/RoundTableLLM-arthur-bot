@@ -5,7 +5,7 @@ export type LLMMessage = {
     content: string;
 };
 
-export type LLMMode = "analyst" | "builder" | "critic";
+export type LLMMode = "master" | "analyst" | "builder" | "critic";
 
 export type ProviderName = "openai" | "anthropic" | "grok" | "dummy";
 

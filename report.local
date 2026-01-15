@@ -8,7 +8,7 @@
 - Provider selection and per-agent model overrides are read from llm.config.json. If unset, auto-picks based on available keys.
 
 ### Default Models (if no per-agent model set)
-- OpenAI: gpt-4o-mini
+- OpenAI: gpt-5.2-codex
 - Anthropic: claude-3-5-sonnet-latest
 - Grok: grok-2-latest
 
@@ -74,6 +74,10 @@
 ## Weighting Configuration
 - Weight tables and invalidation thresholds are defined in llm.config.json.
 - Task types included: PROMPT_ENGINEERING, VERBAL_REASONING, TECHNICAL_EXECUTION, VISUAL_ANALYSIS.
+
+## Weight Wiring Proof
+- Weights are loaded from llm.config.json by src/config.ts and accessible via getWeights().
+- Weight keys are now real model names (e.g., gpt-5.2-codex, claude-3-5-sonnet-implementer, grok-2-latest).
 
 ## Latest Checks
 - Docker build: roundtable-master:test

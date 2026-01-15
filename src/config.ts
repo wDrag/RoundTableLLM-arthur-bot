@@ -56,12 +56,16 @@ function loadConfig(filePath: string): LLMConfig {
     } catch (error) {
         return {
             providers: {
-                openai: { defaultModel: "gpt-4o-mini" },
-                anthropic: { defaultModel: "claude-3-5-sonnet-latest" },
+                openai: { defaultModel: "gpt-5.2-codex" },
+                anthropic: { defaultModel: "claude-4-5-sonnet-latest" },
                 grok: { defaultModel: "grok-2-latest" },
                 dummy: {},
             },
             agents: {
+                master: {
+                    provider: "anthropic",
+                    model: "claude-4-5-sonnet-latest",
+                },
                 analyst: { provider: "dummy" },
                 builder: { provider: "dummy" },
                 critic: { provider: "dummy" },
@@ -79,6 +83,7 @@ function sanitizeConfig(config: LLMConfig): LLMConfig {
     };
 
     const agents: Record<LLMMode, AgentConfig> = {
+        master: pickAgent(config.agents?.master),
         analyst: pickAgent(config.agents?.analyst),
         builder: pickAgent(config.agents?.builder),
         critic: pickAgent(config.agents?.critic),

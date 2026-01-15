@@ -1,4 +1,4 @@
-export type AgentName = "analyst" | "builder" | "critic";
+export type AgentName = "master" | "analyst" | "builder" | "critic";
 
 export interface AgentContext {
     source: "discord";

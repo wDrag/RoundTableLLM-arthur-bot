@@ -4,6 +4,57 @@ import {
     RISK_HARD_THRESHOLD,
     CONFIDENCE_SOFT_THRESHOLD,
 } from "@/agents/types.js";
+import {
+    categorizeAndDecide,
+    type MasterContext,
+    type UseCase,
+} from "@/agents/agents/master.js";
+
+export interface MasterAggregatedResult extends AggregatedResult {
+    useCase: UseCase;
+    reasoning: string;
+}
+
+export async function aggregateWithMaster(
+    outputs: AgentOutput[],
+    userMessage: string,
+    requestId: string
+): Promise<MasterAggregatedResult> {
+    const specialistOutputs = outputs.filter((o) => o.agent !== "master");
+
+    if (specialistOutputs.length === 0) {
+        return {
+            reply: "I am here to help, but I need a little more detail.",
+            useCase: "GENERAL",
+            reasoning: "No specialist responses available",
+            scored: [],
+        };
+    }
+
+    const masterContext: MasterContext = {
+        userMessage,
+        specialistOutputs,
+        requestId,
+    };
+
+    const decision = await categorizeAndDecide(masterContext);
+
+    const scored = specialistOutputs.map((item) => ({
+        ...item,
+        score: item.confidence - 0.75 * item.risk,
+    }));
+
+    return {
+        reply: decision.finalResponse,
+        useCase: decision.useCase,
+        reasoning: decision.reasoning,
+        best: scored.reduce<(AgentOutput & { score: number }) | undefined>(
+            (acc, cur) => (!acc || cur.score > acc.score ? cur : acc),
+            undefined
+        ),
+        scored,
+    };
+}
 
 export function aggregateOutputs(outputs: AgentOutput[]): AggregatedResult {
     const valid = outputs.filter(
