@@ -1,6 +1,6 @@
 import type { LLMMessage, LLMRequest, LLMResponse } from "@/llm/types.js";
 
-const DEFAULT_MODEL = "claude-3-5-sonnet-latest";
+const DEFAULT_MODEL = "claude-4-5-sonnet-latest";
 
 export async function callAnthropic(
     req: LLMRequest,
@@ -16,7 +16,7 @@ export async function callAnthropic(
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "x-api-key": apiKey,
+                "X-Api-Key": apiKey,
                 "anthropic-version": "2023-06-01",
             },
             signal: controller.signal,

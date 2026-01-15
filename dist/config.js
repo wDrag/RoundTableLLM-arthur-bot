@@ -36,7 +36,10 @@ function loadConfig(filePath) {
                 dummy: {},
             },
             agents: {
-                master: { provider: "anthropic", model: "claude-4-5-sonnet-latest" },
+                master: {
+                    provider: "anthropic",
+                    model: "claude-4-5-sonnet-latest",
+                },
                 analyst: { provider: "dummy" },
                 builder: { provider: "dummy" },
                 critic: { provider: "dummy" },

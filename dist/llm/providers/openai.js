@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-5.2-codex";
 export async function callOpenAI(req, apiKey) {
     const controller = new AbortController();
     const timeoutMs = req.timeoutMs ?? 4500;
