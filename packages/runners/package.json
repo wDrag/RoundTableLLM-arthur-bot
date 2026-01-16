@@ -1,0 +1,19 @@
+{
+    "name": "@roundtable/runners",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
+        "dev": "tsx watch src/index.ts",
+        "lint": "tsc -p tsconfig.json --noEmit",
+        "format": "prettier --check src"
+    },
+    "dependencies": {
+        "@roundtable/core": "workspace:*",
+        "@roundtable/providers": "workspace:*",
+        "@roundtable/prompts": "workspace:*"
+    }
+}

@@ -1,0 +1,23 @@
+{
+    "name": "@roundtable/tests",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
+        "lint": "tsc -p tsconfig.json --noEmit",
+        "format": "prettier --check src",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@roundtable/core": "workspace:*",
+        "@roundtable/runners": "workspace:*",
+        "@roundtable/providers": "workspace:*",
+        "@roundtable/prompts": "workspace:*"
+    },
+    "devDependencies": {
+        "vitest": "^1.6.0"
+    }
+}

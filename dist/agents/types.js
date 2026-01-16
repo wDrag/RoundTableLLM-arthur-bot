@@ -1,2 +1,0 @@
-export const CONFIDENCE_SOFT_THRESHOLD = 0.45;
-export const RISK_HARD_THRESHOLD = 0.6;

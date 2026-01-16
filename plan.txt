@@ -1,0 +1,73 @@
+Plan v1.0 (confidence target ≥ 0.8)
+
+Goal
+Build the full production-ready repo described in prod_prompt.txt, using Node 20+, TypeScript ESM, pnpm, Fastify + Zod, Vitest, minimal Docker, and an OpenAPI-first interface for the bot integration (no Discord runtime integration in this repo).
+
+Constraints and non-negotiables
+- Deterministic master orchestration (master adds no claims).
+- llm.config.json is the single source of model/provider choices; model entries are env var names resolved at runtime.
+- Always include critic agent; parallel runner with concurrency + timeout.
+- Invalidation thresholds: soft 0.60, hard 0.45; aggregate score = confidence - 0.75*risk.
+- Ask exactly one A/B/C question only if c_final < 0.70.
+- Output contract sections required for /ask, /audit, /deep.
+- Docker-first with minimal multi-stage images.
+- OpenAI + xAI providers are stubs behind enabled flags.
+- Official sources only for any external research; no third-party citations.
+
+Work breakdown (phased)
+Phase 1 — Baseline repo scaffolding
+1) Create repo layout per spec:
+   /apps/bot, /apps/master, /packages/core, /packages/providers, /packages/runners, /packages/prompts, /packages/tests.
+2) Add pnpm workspace + tsconfig baseline for NodeNext ESM, and shared tooling configs.
+3) Add llm.config.json and Zod schema for validation in /packages/core.
+4) Add .env.example and docker-compose.yml with required services and health checks.
+
+Phase 2 — Config loader + model resolution
+1) Implement config loader (read + validate + optional watch when CONFIG_WATCH=1).
+2) Implement getModelForRole(role, taskType, mode) → provider, modelId, temperature, maxTokens.
+3) Ensure model resolution uses env var names from config (process.env[modelEnvName]).
+4) Add unit tests for parsing and model resolution (Vitest).
+
+Phase 3 — Providers layer
+1) Implement AnthropicProvider (messages + count_tokens) using fetch and env headers.
+2) Implement OpenAIProvider and XaiProvider as stubs that throw clear disabled errors if not enabled.
+3) Add provider interface and error types in /packages/providers.
+
+Phase 4 — Orchestrator core
+1) Build Fastify master app with static JSON schemas (no user-supplied schemas).
+2) Implement /health and /api/chat.
+3) Implement deterministic routing + scoring + invalidation rules (soft/hard thresholds, merge pool = valid only).
+4) Implement DAA merge rules, disagreements, quarantine, and audit appendix.
+5) Implement c_final calculation and exact A/B/C question rule (only if < 0.70).
+6) Logging: requestId, routing plan, per-agent timing; never log full Authorization tokens.
+
+Phase 5 — Runners + committee
+1) Implement runners with concurrency + timeout guard.
+2) Always include critic agent; include optional editor pass for /deep only (no new claims).
+3) Implement budget estimation using count_tokens and enforce cost caps (0.10 ask, 0.50 deep best-effort).
+
+Phase 6 — Bot service (OpenAPI-first)
+1) Build bot service as an API wrapper that exposes OpenAPI endpoints for /ask, /audit, /deep.
+2) Bot forwards requests to master and returns results.
+3) No Discord SDK integration in this repo.
+
+Phase 7 — Tests
+1) Unit tests for config parsing + model resolution.
+2) Golden test for /ask output (byte-identical except timestamps).
+3) Budget test enforcing 0.10 for /ask and 0.50 for /deep.
+
+Phase 8 — Docs
+1) README with docker compose up -d, curl health, model change instructions, and API datatypes.
+2) Ensure .env.example lists Discord variables (for external bot repo), Anthropic, optional OpenAI/xAI.
+
+Verification steps
+- Run unit tests (Vitest) for config and routing logic.
+- Validate master /health response and /api/chat request/response shape.
+- Confirm A/B/C question rule is only triggered when c_final < 0.70.
+- Confirm no hardcoded model names in code; all resolved from llm.config.json + env.
+
+Open items pending confirmation
+- Internet research for high-risk libs must use official sources and requires explicit approval before starting.
+
+Confidence
+- 0.86 (requirements clarified; remaining risk is external research approval and hidden repo constraints).

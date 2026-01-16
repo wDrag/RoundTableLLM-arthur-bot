@@ -1,0 +1,130 @@
+You are a senior TS/Node engineer. Build a production-ready repo implementing:
+- Discord bot UX (/ask, /audit, /deep)
+- Deterministic Master Orchestrator API (master is code, adds no new claims)
+- Multi-agent committee runners (Anthropic now via API; OpenAI + xAI adapters as placeholders)
+- Numeric scoring + invalidation thresholds + deterministic assembly (DAA)
+- Workflow interaction rule: ask user only if c_final < 0.70, exactly one A/B/C question
+- Docker-first deployment on Ubuntu VPS
+
+CRITICAL NEW REQUIREMENT: llm.config.json
+- Add repo-root file: ./llm.config.json
+- All model/provider choices must come from this file (no hardcoded model names in code).
+- Must be easy to swap models without code changes.
+
+Repo layout:
+/
+  llm.config.json
+  .env.example
+  docker-compose.yml
+  /apps
+    /bot
+      Dockerfile
+      src/...
+    /master
+      Dockerfile
+      src/...
+  /packages
+    /core
+    /providers
+    /runners
+    /prompts
+    /tests
+  README.md
+
+llm.config.json schema (define and validate with Zod at runtime):
+{
+  "version": 1,
+  "providers": {
+    "anthropic": {
+      "enabled": true,
+      "baseUrl": "https://api.anthropic.com",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "anthropicVersionEnv": "ANTHROPIC_VERSION"
+    },
+    "openai": { "enabled": false, "apiKeyEnv": "OPENAI_API_KEY" },
+    "xai": { "enabled": false, "apiKeyEnv": "XAI_API_KEY" }
+  },
+  "models": {
+    "roles": {
+      "solver":   { "provider": "anthropic", "model": "CLAUDE_MODEL_SOLVER", "temperature": 0.2, "maxTokens": 1600 },
+      "critic":   { "provider": "anthropic", "model": "CLAUDE_MODEL_CRITIC", "temperature": 0.2, "maxTokens": 1200 },
+      "verifier": { "provider": "anthropic", "model": "CLAUDE_MODEL_VERIFIER", "temperature": 0.0, "maxTokens": 1200 },
+      "impl":     { "provider": "anthropic", "model": "CLAUDE_MODEL_IMPL", "temperature": 0.2, "maxTokens": 1800 },
+      "visual":   { "provider": "anthropic", "model": "CLAUDE_MODEL_VISUAL", "temperature": 0.1, "maxTokens": 1400 },
+      "promptsmith": { "provider": "openai", "model": "OPENAI_MODEL_PROMPTSMITH", "temperature": 0.2, "maxTokens": 1600 },
+      "grok":        { "provider": "xai",    "model": "XAI_MODEL_GROK", "temperature": 0.2, "maxTokens": 1600 }
+    },
+    "taskTypeOverrides": {
+      "PROMPT_ENGINEERING": { "promptsmith": { "enabled": true }, "grok": { "enabled": true } },
+      "VISUAL_ANALYSIS": { "grok": { "enabled": false } }
+    }
+  },
+  "cost": {
+    "normalMaxUsd": 0.10,
+    "deepMaxUsd": 0.50
+  }
+}
+
+IMPORTANT: The "model" fields above are ENV-VAR NAMES (strings), not the model IDs.
+At runtime, resolve: actualModelId = process.env[modelEnvName].
+This makes swapping models an env change or config change without code edits.
+
+Implementation tasks:
+1) Config loader
+- Read llm.config.json at startup (and optionally watch for changes if CONFIG_WATCH=1).
+- Validate with Zod, fail fast with clear error messages.
+- Expose a function getModelForRole(role, taskType, mode) -> {provider, modelId, temperature, maxTokens}
+
+2) Providers
+- Implement AnthropicProvider using fetch:
+  POST {baseUrl}/v1/messages
+  Headers: x-api-key (from env), anthropic-version (from env), content-type: application/json
+  Body: { model, max_tokens, messages }
+- Implement token counting endpoint for budget estimation:
+  POST {baseUrl}/v1/messages/count_tokens
+- OpenAIProvider and XaiProvider as stubs behind enabled flags (throw clear "disabled" errors).
+
+3) Docker-first
+- apps/master and apps/bot each have a multi-stage Dockerfile.
+- docker-compose.yml:
+  - master exposed on 8787
+  - master has /health
+  - bot depends_on master with condition: service_healthy
+  - volume master-data mounted at /app/data
+
+4) Master service
+- Fastify + JSON schema validation (schemas must be static/internal, never user-supplied).
+- POST /api/chat accepts {source, mode, user, context, message, attachments}
+- Implements task classifier and committee wake-up only when needed:
+  - /ask: fast path (solver + verifier unless task requires more)
+  - /audit: deep metadata, but still deterministic output
+  - /deep: full committee + optional Editor polish pass
+- Deterministic scoring and assembly rules from requirements:
+  - Cred axes, thresholds (hard 0.45, soft 0.60), weight reallocation
+  - Merge pool only VALID (>=0.60)
+  - Conflicts go to DISAGREEMENTS, no resolution by master
+
+5) Workflow c_final and ask-user rule
+- Compute c_final deterministically from requirements-based scoring.
+- If c_final < 0.70 ask exactly ONE A/B/C question, else ship.
+
+6) Output contract
+Always include:
+- TL;DR (1-3 lines)
+- Main answer (Markdown)
+- Assumptions ledger
+- Confidence score
+For /audit and /deep include full audit appendix: task type, weights, axis scores, statuses, merge trace tags, quarantine reasons, disagreements, budget estimation.
+For /deep only: optional LLM polish pass that MUST NOT add new claims beyond merged units; include list of unit IDs used.
+
+7) Tests
+- Unit tests for config parsing + model resolution logic
+- Golden test: given saved agent outputs, /ask output is byte-identical (except timestamps)
+- Budget test: /ask enforces 0.10 best-effort via call limiting, /deep allows 0.50
+
+At the end, output:
+- A .env.example listing required env vars (Discord + Anthropic + optional OpenAI/xAI)
+- A README with:
+  - docker compose up -d
+  - curl health check
+  - how to change models via llm.config.json + env vars

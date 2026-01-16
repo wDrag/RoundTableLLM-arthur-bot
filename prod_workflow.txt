@@ -1,0 +1,207 @@
+# Multi-Agent Orchestra Workflow v1 (Internal Use)
+
+Goal: **trust-minimized**, **accuracy-first** (90% weight) multi-agent orchestration with **minimal user interaction**.  
+Default output: **Markdown**.
+
+---
+
+## 0) Hard constraints (locked)
+
+- **Primary objective**: Factual correctness / accuracy (90%)
+- **Secondary objectives**: quality + completeness (10%), speed is non-priority
+- **Max cost per request**: **$0.10**
+- **Latency**: prioritize quality (no strict ceiling)
+- **Tooling**: agents may use any tools required by task/product
+- **Trust model**: **trust-minimized** (verification gates)
+- **Consensus**: **confidence-weighted**
+- **User interaction rule**: ask user only if **final confidence < 0.70**
+- **Default format**: Markdown
+
+---
+
+## 1) Agent roster
+
+### Always-on core
+1. **Master Orchestrator**
+   - Routes tasks to agents
+   - Enforces budget + interaction rule
+   - Computes final confidence
+2. **Solver Agent**
+   - Produces the main candidate answer
+   - Lists assumptions + factual claims
+3. **Critic Agent**
+   - Attacks weak logic, missing steps, contradictions, vague claims
+4. **Verifier Agent**
+   - Checks correctness, internal consistency, constraint compliance
+5. **Editor/Synthesizer**
+   - Merges + compresses into ship-ready output (Markdown)
+   - Removes fluff + resolves conflicts
+
+### Optional specialists (spawn only when needed)
+- **Domain Specialist**
+  - Web3, security, distributed systems, math, legal-ish formatting, etc.
+- **Implementation Agent**
+  - Code, APIs, schemas, unit tests, deploy steps
+
+---
+
+## 2) Minimal-interaction execution loop
+
+### Step 1 - Task Contract (internal, no user questions)
+Master extracts:
+- task_type ∈ {coding, debugging, analysis, planning, writing, research}
+- output_shape ∈ {single_answer, plan_plus_code, spec, checklist, report}
+- risk_level ∈ {low, medium, high}
+- must_include checklist
+
+**Output:** Task Contract v0.1 (internal)
+
+---
+
+### Step 2 - Candidate generation (Solver)
+Solver outputs:
+- candidate_text_v0
+- assumptions_ledger
+- factual_claims list
+- c_solver ∈ [0, 1]
+
+---
+
+### Step 3 - Debate (Critic ↔ Solver)
+**Round 1 (always)**
+- Critic: produces issue list with severity ∈ {low, med, high}
+- Solver: revises into candidate_text_v1
+
+**Round 2 (optional, cost-aware)**
+Run only if any trigger holds:
+- risk_level == high
+- verifier_confidence < 0.80
+- critic has ≥1 high-severity issue
+
+---
+
+### Step 4 - Verification gate (Verifier)
+Verifier checks:
+- internal consistency (no contradictions)
+- required sections are present
+- factual claims are supported OR demoted to assumptions
+- security/safety red flags
+- acceptance tests included when applicable
+
+Outputs:
+- c_verify ∈ [0, 1]
+- verifier_issues list
+
+---
+
+### Step 5 - Consensus + synthesis (Editor)
+The Editor produces the final response using **confidence-weighted selection** across candidates.
+
+#### Final confidence formula
+Let:
+- c_verify = verifier confidence
+- c_solver = solver confidence
+- c_critic_agree = 1 if critic approves final candidate, else 0
+
+Compute:
+c_final = 0.55 * c_verify + 0.25 * c_solver + 0.20 * c_critic_agree
+
+---
+
+### Step 6 - User interaction rule (hard)
+- If c_final ≥ 0.70: **ship response immediately**
+- If c_final < 0.70: ask **exactly one** blocking question (A/B/C choices)
+
+---
+
+## 3) Cost / accuracy policy (<= $0.10)
+
+### Budget by role (relative weights)
+- Solver: 45%
+- Critic: 20%
+- Verifier: 20%
+- Editor: 15%
+- Specialists: borrow from Solver budget
+
+### Agent count policy (dynamic)
+- Default: **3 agents** (Solver + Critic + Verifier)
+- Upgrade: **5 agents** (add Editor + Specialist) only if:
+  - risk_level == high OR verifier_confidence < 0.80 OR domain is niche
+
+### Debate rounds policy
+- Round 1 always
+- Round 2 only if cheaper than rework (see triggers above)
+
+---
+
+## 4) Output contract (always included in final response)
+
+1) **TL;DR** (1-3 lines)  
+2) **Main answer** (Markdown)  
+3) **Assumptions ledger** (bullet list)  
+4) **Acceptance tests / sanity checks** (when buildable)  
+5) **Confidence score** (0-1)  
+6) **Sources / citations** when claims depend on external facts
+
+---
+
+## 5) System-level acceptance tests
+
+1) Determinism under low temperature
+- Same task + same seed -> confidence variance <= 0.05
+
+2) Hallucination suppression
+- If verifier flags unsupported factual claim (high severity):
+  - Editor must remove the claim OR mark it explicitly as an assumption
+
+3) Interaction guardrail
+- If c_final ≥ 0.70: system must not ask user questions
+- If c_final < 0.70: system must ask exactly 1 question with discrete options
+
+4) Budget guardrail
+- Total agent call cost <= $0.10
+- If budget pressure: drop Round 2 and/or specialist agents first
+
+5) Completeness
+- Final response must always include TL;DR + Assumptions + Confidence
+
+---
+
+## 6) Orchestrator config (YAML)
+
+```yaml
+orchestra:
+  mode: internal
+  output_format: markdown
+  max_cost_usd: 0.10
+  ask_user_below_confidence: 0.70
+
+agents:
+  solver:
+    weight: 0.45
+    temperature: 0.2
+  critic:
+    weight: 0.20
+    temperature: 0.2
+  verifier:
+    weight: 0.20
+    temperature: 0.0
+  editor:
+    weight: 0.15
+    temperature: 0.1
+
+policy:
+  default_agent_count: 3
+  max_agent_count: 5
+  debate_rounds_default: 1
+  debate_rounds_max: 2
+  spawn_specialist_if:
+    - high_risk
+    - verifier_confidence_below: 0.80
+
+consensus:
+  type: confidence_weighted
+  final_confidence_formula:
+    verify: 0.55
+    solver: 0.25
+    critic_agree: 0.20

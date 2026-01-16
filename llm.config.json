@@ -1,62 +1,84 @@
 {
+    "version": 1,
     "providers": {
-        "openai": {
-            "defaultModel": "gpt-5.2-codex"
-        },
         "anthropic": {
-            "defaultModel": "claude-4-5-sonnet-latest"
+            "enabled": true,
+            "baseUrl": "https://api.anthropic.com",
+            "apiKeyEnv": "ANTHROPIC_API_KEY",
+            "anthropicVersionEnv": "ANTHROPIC_VERSION"
         },
-        "grok": {
-            "defaultModel": "grok-2-latest"
+        "openai": {
+            "enabled": false,
+            "apiKeyEnv": "OPENAI_API_KEY"
+        },
+        "xai": {
+            "enabled": false,
+            "apiKeyEnv": "XAI_API_KEY"
         }
     },
-    "agents": {
-        "master": {
-            "provider": "anthropic",
-            "model": "claude-4-5-sonnet-latest"
+    "models": {
+        "roles": {
+            "solver": {
+                "provider": "anthropic",
+                "model": "CLAUDE_MODEL_SOLVER",
+                "temperature": 0.2,
+                "maxTokens": 1600
+            },
+            "critic": {
+                "provider": "anthropic",
+                "model": "CLAUDE_MODEL_CRITIC",
+                "temperature": 0.2,
+                "maxTokens": 1200
+            },
+            "verifier": {
+                "provider": "anthropic",
+                "model": "CLAUDE_MODEL_VERIFIER",
+                "temperature": 0.0,
+                "maxTokens": 1200
+            },
+            "impl": {
+                "provider": "anthropic",
+                "model": "CLAUDE_MODEL_IMPL",
+                "temperature": 0.2,
+                "maxTokens": 1800
+            },
+            "visual": {
+                "provider": "anthropic",
+                "model": "CLAUDE_MODEL_VISUAL",
+                "temperature": 0.1,
+                "maxTokens": 1400
+            },
+            "promptsmith": {
+                "provider": "openai",
+                "model": "OPENAI_MODEL_PROMPTSMITH",
+                "temperature": 0.2,
+                "maxTokens": 1600
+            },
+            "grok": {
+                "provider": "xai",
+                "model": "XAI_MODEL_GROK",
+                "temperature": 0.2,
+                "maxTokens": 1600
+            }
         },
-        "analyst": {
-            "provider": "openai"
-        },
-        "builder": {
-            "provider": "openai"
-        },
-        "critic": {
-            "provider": "anthropic"
+        "taskTypeOverrides": {
+            "PROMPT_ENGINEERING": {
+                "promptsmith": {
+                    "enabled": true
+                },
+                "grok": {
+                    "enabled": true
+                }
+            },
+            "VISUAL_ANALYSIS": {
+                "grok": {
+                    "enabled": false
+                }
+            }
         }
     },
-    "weights": {
-        "PROMPT_ENGINEERING": {
-            "gpt-5.2-codex": 0.52,
-            "claude-4-opus": 0.2,
-            "claude-4-5-sonnet": 0.15,
-            "claude-4-haiku": 0.1,
-            "grok-2-latest": 0.03
-        },
-        "VERBAL_REASONING": {
-            "claude-4-opus": 0.33,
-            "gpt-5.2-codex": 0.24,
-            "claude-4-5-sonnet": 0.25,
-            "claude-4-haiku": 0.08,
-            "grok-2-latest": 0.1
-        },
-        "TECHNICAL_EXECUTION": {
-            "claude-4-5-sonnet": 0.45,
-            "claude-4-opus": 0.23,
-            "claude-4-haiku": 0.11,
-            "gpt-5.2-codex": 0.11,
-            "grok-2-latest": 0.1
-        },
-        "VISUAL_ANALYSIS": {
-            "claude-4-5-sonnet": 0.5,
-            "claude-4-opus": 0.2,
-            "claude-4-haiku": 0.15,
-            "gpt-5.2-codex": 0.1,
-            "grok-2-latest": 0.05
-        }
-    },
-    "invalidation": {
-        "hard": 0.45,
-        "soft": 0.6
+    "cost": {
+        "normalMaxUsd": 0.10,
+        "deepMaxUsd": 0.50
     }
 }
