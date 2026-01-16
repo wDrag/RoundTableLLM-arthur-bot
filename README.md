@@ -40,11 +40,39 @@ curl http://localhost:8787/health
 }
 ```
 
+### Datatype requirements (ChatRequest)
+
+Required fields:
+
+- source: string (non-empty recommended)
+- mode: string enum, one of: ask | audit | deep
+- user: object
+  - id: string (required, non-empty)
+  - name: string (optional)
+- message: string (required, non-empty)
+
+Optional fields:
+
+- context: string
+- attachments: array of objects
+  - name: string (optional)
+  - type: string (optional; use MIME type, e.g. image/png)
+  - url: string (optional; URL or reference)
+
+Headers:
+
+- Content-Type: application/json
+- Authorization: Bearer <MASTER_API_KEY> (required only when MASTER_API_KEY is set)
+
 ### Response body (ChatResponse)
 
 ```json
 { "reply": "string" }
 ```
+
+### Datatype requirements (ChatResponse)
+
+- reply: string (always present)
 
 ## Environment variables
 
@@ -52,7 +80,7 @@ See .env.example for required variables.
 
 ## Repo layout
 
-```
+``` structure
 /
   llm.config.json
   .env.example

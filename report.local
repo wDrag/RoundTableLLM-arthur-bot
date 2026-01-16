@@ -184,3 +184,8 @@ Created monorepo layout, core orchestration modules, providers, runners, prompts
 - Fixed master app missing dependency on @roundtable/providers.
 - Removed source path mappings for workspace packages and rebuilt dist outputs.
 - pnpm -r build succeeded; pnpm -r lint succeeded with no errors.
+
+---
+
+## Docs Update (Jan 16, 2026)
+Expanded README API section with explicit datatype requirements, field optionality, and header requirements for ChatRequest/ChatResponse.
