@@ -15,7 +15,7 @@ services:
     volumes:
       - master-data:/app/data
     healthcheck:
-      test: ["CMD", "node", "dist/healthcheck.js"]
+      test: ["CMD", "node", "apps/master/dist/healthcheck.js"]
       interval: 10s
       timeout: 3s
       retries: 5
