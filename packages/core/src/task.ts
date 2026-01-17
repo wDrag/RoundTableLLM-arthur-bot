@@ -7,11 +7,14 @@ export interface TaskClassification {
 
 export const classifyTask = (
   message: string,
-  attachments: Array<{ type?: string }> = []
+  attachments: Array<{ type?: string; contentType?: string }> = []
 ): TaskClassification => {
   const text = message.toLowerCase();
   const hasImage = attachments.some(
-    (att) => att.type?.startsWith("image/") || att.type === "image"
+    (att) =>
+      att.type?.startsWith("image/") ||
+      att.type === "image" ||
+      att.contentType?.startsWith("image/")
   );
   const isPrompt = /prompt|system prompt|rubric|template/.test(text);
   const isTech = /code|api|bug|error|stack trace|docker|deploy|typescript|node|fastify/.test(text);

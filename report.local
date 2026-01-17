@@ -1,191 +1,59 @@
-## Models: Master vs Specialists
-### Master
-- The master service does not run a model directly. It is an HTTP orchestrator that routes requests to specialists (agents) and aggregates their outputs.
+## Heavy Test Rerun (Jan 17, 2026)
 
-### Specialists (Agents)
-- Analyst, Builder, Critic are the specialists.
-- Each specialist calls callLLM with its mode and messages.
-- Provider selection and per-agent model overrides are read from llm.config.json. If unset, auto-picks based on available keys.
-
-### Default Models (if no per-agent model set)
-- OpenAI: gpt-5.2-codex
-- Anthropic: claude-3-5-sonnet-latest
-- Grok: grok-2-latest
-
-### Where Models Are Chosen
-- Provider auto-pick in src/llm/ensemble.ts
-- Per-agent provider/model overrides in llm.config.json (loaded by src/config.ts)
-- Provider defaults in src/llm/providers/openai.ts, src/llm/providers/anthropic.ts, src/llm/providers/grok.ts
-
-## Requirements Comparison (Requested vs Repo)
-### Core Stack
-- Node 20+, TypeScript ESM NodeNext, pnpm, Fastify + Zod: ✅
-
-### API Contract
-- POST /api/chat request/response shape preserved: ✅
-- GET /health -> { ok: true }: ✅
-- Auth behavior with MASTER_API_KEY: ✅
-- Always returns JSON { reply }: ✅
-
-### Orchestration
-- Router -> Runner -> Aggregator -> Reply: ✅
-- Always includes critic: ✅
-- Runner defaults (concurrency=2, timeout=60000ms): ✅
-- Aggregator invalidation logic (risk>=0.60 && confidence<=0.45): ✅
-
-### LLM Adapter Layer
-- Providers: OpenAI, Anthropic, Grok, Dummy: ✅
-- AbortController timeout in providers: ✅
-- Auto-pick provider by keys; fallback to dummy on failure: ✅
-- No secret logging: ✅
-- Deterministic fallback always available: ✅
-
-### Env Vars
-- ANTHROPIC_API_KEY: ✅
-- XAI_API_KEY: ✅
-- Provider/model overrides moved to llm.config.json: ✅
-
-### NodeNext ESM Import Rules
-- Internal imports use .js extensions: ✅
-
-### Docker
-- Multi-stage build and healthcheck: ✅
-- Runs dist/server.js directly (no PM2 dependency): ✅
-
-## Environment Example
-- Added .env.example with all supported variables.
-
-## Environment Variables (Detailed)
-### Server
-- PORT: Port the HTTP server listens on. Default 8000.
-- LOG_LEVEL: Fastify logger level. Examples: trace, debug, info, warn, error. Default info.
-
-### Auth
-- MASTER_API_KEY: If set, POST /api/chat requires Authorization: Bearer <MASTER_API_KEY>. If unset, requests are unauthenticated.
-
-### Provider Keys
-- OPENAI_API_KEY: Enables OpenAI provider.
-- ANTHROPIC_API_KEY: Enables Anthropic provider.
-- XAI_API_KEY: Enables Grok provider.
-
-### Model/Weight Config File
-- llm.config.json controls per-agent provider, per-agent model, and weight tables.
-
-## Weighting Configuration
-- Weight tables and invalidation thresholds are defined in llm.config.json.
-- Task types included: PROMPT_ENGINEERING, VERBAL_REASONING, TECHNICAL_EXECUTION, VISUAL_ANALYSIS.
-
-## Weight Wiring Proof
-- Weights are loaded from llm.config.json by src/config.ts and accessible via getWeights().
-- Weight keys are now real model names (e.g., gpt-5.2-codex, claude-3-5-sonnet-implementer, grok-2-latest).
-
-## Latest Checks
-- Docker build: roundtable-master:test
-- Docker run (with ANTHROPIC_API_KEY): /health -> { ok: true }, /api/chat returns Anthropic-backed reply
-
-## Orchestration Test Results (Anthropic enabled)
-### Test Request
-- Method: POST /api/chat
-- Payload:
-  - source: discord
-  - user: { id: "test-user", name: "Developer" }
-  - message: "Explain this project architecture in one sentence."
-
-### Routing Plan
-- Agents: ["analyst", "builder", "critic"]
-
-### Specialist Outputs & Scores
-#### analyst (anthropic/claude-sonnet-4-5)
-- Confidence: 0.58
-- Risk: 0.20
-- Content: "I need to see the project files to explain the architecture, but no codebase context has been provided yet.\n\n**Risk Assessment:** Cannot provide architecture explanation without access to project files or directory structure."
-
-#### builder (anthropic/claude-haiku-4-5)
-- Confidence: 0.65
-- Risk: 0.25
-- Content: "I'd be happy to help explain a project architecture, but I don't see any architecture details or diagrams in your message. Could you share the architecture you'd like me to summarize? 😊"
-
-#### critic (anthropic/claude-opus-4-5)
-- Confidence: 0.50
-- Risk: 0.35
-- Content: "I'd be happy to help explain a project architecture, but I don't see any project files, code, or documentation shared in your message. Could you please provide the project details—such as a folder structure, codebase, or description—so I can summarize its architecture in one sentence?"
-
-### Master Categorization
-- Use Case: GENERAL
-- Reply: JSON block with useCase=TECHNICAL_EXECUTION and a clarification asking for project details before summarizing
-
-### Performance Metrics (ms)
-- analyst: ~6212
-- builder: ~4669
-- critic: ~4009
-- Total latency: ~14.4s (timeouts raised to 15000ms to avoid fallbacks)
-
-### Architecture Flow
-1. **Router** (src/agents/router.ts): ["analyst", "builder", "critic"]
-2. **Runner** (src/agents/runner.ts): Parallel execution (concurrency=2, timeout=15000ms)
-3. **LLM Dispatch** (src/llm/ensemble.ts): Anthropic providers for all specialists; error logging added; dummy fallback on failure
-4. **Aggregate** (src/agents/aggregate.ts): Master calls categorizeAndDecide()
-5. **Response**: Returns { reply } to client
-
-## Orchestration Test Results (Nobel Prize query)
-### Test Request
-- Method: POST /api/chat
-- Payload:
-  - source: discord
-  - user: { id: "test-user", name: "Developer" }
-  - message: "Who won this year's Nobel Prize in Economics and what was their main contribution?"
-
-### Routing Plan
-- Agents: ["analyst", "builder", "critic"]
-
-### Specialist Outputs & Scores
-#### analyst (anthropic/claude-sonnet-4-5)
-- Confidence: 0.58
-- Risk: 0.20
-- Content (paraphrased): Notes it’s a factual query, lacks real-time data, suggests checking nobelprize.org or search; warns cutoff.
-
-#### builder (anthropic/claude-haiku-4-5)
-- Confidence: 0.65
-- Risk: 0.25
-- Content (paraphrased factual answer): States 2025 prize to Daron Acemoglu, Simon Johnson, James A. Robinson for showing inclusive institutions drive prosperity.
-
-#### critic (anthropic/claude-opus-4-5)
-- Confidence: 0.50
-- Risk: 0.35
-- Content (paraphrased): Transparent about no realtime; lists recent winners (2024 Acemoglu/Johnson/Robinson; 2023 Goldin; 2022 Bernanke/Diamond/Dybvig); advises to specify year.
-
-### Master Reply
-- useCase: GENERAL
-- review: Paraphrased consensus that the prize went to Acemoglu/Johnson/Robinson for institutional impacts on prosperity; notes one specialist’s uncertainty.
-- finalResponse: Concise user-facing answer: 2025 Nobel to Acemoglu/Johnson/Robinson for demonstrating inclusive institutions drive long-term growth.
-
-### Performance Metrics (ms)
-- analyst: ~9.3s
-- builder: ~3.4s
-- critic: ~9.0s
-- Total latency: ~19.4s (Anthropic round-trips at 60s timeout)
+### ask (normal)
+createdAt: 2026-01-17T17:26:57.614Z
+requestJson:
+{"source":"cli","mode":"ask","user":{"id":"local"},"message":"Summarize the key risks in adopting this LLM orchestration system for a medium-sized SaaS team."}
+agentJson:
+[{"role":"critic","status":"VALID","credibility":0.92264,"axisScores":{"coherence":21.15,"alignment":22.95,"verifiability":25,"signalDensity":25,"compliance":23.5},"raw":{"agent":"CRITIC","answerSummary":["The LLM orchestration system presents significant operational, technical, and cost risks for medium-sized SaaS teams","Key concerns include complexity overhead, token budget management, timeout handling, and dependency on external LLM providers","Teams must balance automation benefits against maintenance burden and potential failure modes"],"assumptions":["Medium-sized SaaS team has 10-50 engineers with limited DevOps resources","Team is considering this system for production use, not just experimentation","System will handle customer-facing or business-critical workflows","Team has existing CI/CD and monitoring infrastructure","Budget constraints exist for API costs and engineering time"],"reasoning":"Analyzing the system prompt reveals a complex orchestration framework with strict operational constraints (350-line write limits, chunked operations, timeout management). For medium-sized teams, this introduces multiple risk vectors: operational complexity requiring specialized knowledge, brittle failure modes from timeout/token limits, cost unpredictability from LLM API usage, and maintenance overhead. The mandatory chunked write protocol indicates the system has known scalability issues. The multi-agent architecture (SOLVER, CRITIC, VERIFIER, etc.) adds coordination complexity. Teams must weigh automation value against these operational burdens.","stepsOrDeliverables":["Operational Complexity: Requires deep understanding of chunked write protocols, token budgets (200k limit shown), and timeout management (2-3 minute windows)","Brittle Failure Modes: System has hard limits (350 lines/operation) that cause complete failures if violated; timeouts waste compute and require retries","Cost Unpredictability: Token budget of 200k per task can lead to variable API costs; difficult to forecast monthly expenses at scale","Maintenance Burden: Custom orchestration logic, multi-agent coordination, and strict JSON schemas require ongoing engineering investment","Vendor Lock-in: Heavy dependency on LLM provider APIs; switching costs are high due to prompt engineering and agent-specific tuning","Debugging Difficulty: Multi-agent workflows with strict JSON outputs make troubleshooting failures complex; limited visibility into agent reasoning","Skill Gap: Requires specialized knowledge of LLM orchestration patterns; not standard DevOps/SRE skillset","Scalability Concerns: Chunked write requirements suggest underlying performance issues; may not scale to high-throughput scenarios","Error Recovery: Failed operations require manual intervention or complex retry logic; no clear automated recovery mechanisms described","Testing Challenges: Non-deterministic LLM outputs make unit/integration testing difficult; requires new testing paradigms"],"failureModes":["Timeout cascades: Single operation exceeding 2-3 minutes blocks entire workflow, wasting prior work","Token budget exhaustion: Hitting 200k limit mid-task causes incomplete outputs and wasted API costs","Write operation failures: Violating 350-line limit causes complete write failure requiring full retry","JSON schema violations: Strict output format requirements cause agent failures if LLM produces invalid JSON","Agent coordination failures: Multi-agent handoffs (SOLVER→CRITIC→VERIFIER) can break at any transition","Cost runaway: Unoptimized prompts or retry loops can cause unexpected API bill spikes","Silent degradation: System may produce valid JSON with low-quality content that passes validation but fails business logic","Dependency failures: External LLM API outages or rate limits halt all operations","Knowledge drift: LLM model updates can change behavior, breaking tuned prompts and workflows","Monitoring gaps: Complex multi-agent flows difficult to instrument; failures may go undetected until customer impact"],"units":[{"id":"U1","topic":"Operational Risk Assessment","text":"The system's mandatory chunked write protocol (max 350 lines) and timeout constraints (2-3 minutes) indicate fundamental scalability limitations. Medium-sized teams lack dedicated platform engineering to manage these constraints at scale. Every developer must understand chunking logic, increasing cognitive load and onboarding time.","tags":["operations","scalability","developer-experience"]},{"id":"U2","topic":"Cost Management Risk","text":"200k token budget per task with multiple agent invocations (SOLVER, CRITIC, VERIFIER, etc.) creates unpredictable costs. A single complex workflow could consume $5-20 in API costs. Without strict governance, monthly bills can balloon. Medium teams often lack FinOps expertise to optimize LLM spend.","tags":["cost","budget","finops"]},{"id":"U3","topic":"Reliability and Failure Handling","text":"Hard failures from timeout/line-limit violations waste all prior work in a task. No graceful degradation mentioned. Retry logic must be custom-built. For customer-facing features, this brittleness is unacceptable. Teams need robust error handling and circuit breakers not evident in the system design.","tags":["reliability","error-handling","sre"]},{"id":"U4","topic":"Maintenance and Technical Debt","text":"Custom orchestration with strict JSON schemas and multi-agent coordination creates significant technical debt. As LLM models evolve, prompts require continuous tuning. Medium teams may lack bandwidth for ongoing maintenance, leading to degraded performance or abandoned features over time.","tags":["maintenance","technical-debt","sustainability"]},{"id":"U5","topic":"Testing and Quality Assurance","text":"Non-deterministic LLM outputs make traditional testing inadequate. Teams need new QA approaches: prompt regression testing, output validation frameworks, and human-in-the-loop review. Medium-sized teams may lack expertise to build robust LLM testing infrastructure, risking quality issues in production.","tags":["testing","qa","quality"]}],"selfConfidence":0.85}},{"role":"solver","status":"VALID","credibility":0.7986666666666667,"axisScores":{"coherence":11.149999999999999,"alignment":23.15,"verifiability":25,"signalDensity":16.666666666666664,"compliance":23.2},"raw":{"agent":"SOLVER","answerSummary":["Key risks include operational complexity from multi-agent coordination, cost unpredictability from token usage, dependency on external LLM providers, potential security vulnerabilities in code generation, quality control challenges with autonomous agents, integration difficulties with existing workflows, and team skill gaps in managing agentic systems."],"assumptions":["The LLM orchestration system involves multiple specialized agents (SOLVER, CRITIC, VERIFIER, IMPL, VISUAL, PROMPTSMITH, GROK)","The team is medium-sized (10-50 engineers) with typical SaaS constraints on budget and resources","The system is intended for production coding assistance or automation","The team has standard DevOps practices and CI/CD pipelines","Current team has limited experience with agentic AI systems"],"reasoning":"Based on the system architecture revealed in the context (multi-agent orchestration with specialized roles, token budgets, strict JSON protocols), several risk categories emerge: technical complexity risks from coordinating multiple AI agents with different specializations, financial risks from unpredictable token consumption at scale, operational risks from autonomous code generation and modification, security risks from AI-generated code potentially introducing vulnerabilities, and organizational risks from team adaptation challenges. Medium-sized SaaS teams typically have constrained resources compared to enterprises, making cost overruns and operational overhead particularly impactful.","stepsOrDeliverables":["1. Technical Complexity Risks: Managing multi-agent coordination, debugging agent interactions, handling edge cases in agent handoffs","2. Cost Management Risks: Unpredictable token usage (200K budget per task), scaling costs with team adoption, ROI uncertainty","3. Vendor Lock-in Risks: Dependency on Google Deepmind/specific LLM providers, API changes breaking workflows, service availability","4. Security & Compliance Risks: AI-generated code may contain vulnerabilities, sensitive data exposure through prompts, audit trail complexity","5. Quality Control Risks: Autonomous code changes bypassing review, inconsistent output quality, hallucination in critical paths","6. Integration Risks: Compatibility with existing tools (IDEs, Git, CI/CD), workflow disruption during adoption, legacy codebase challenges","7. Team & Organizational Risks: Learning curve for developers, resistance to AI pair programming, skill atrophy concerns, accountability gaps when AI makes errors"],"failureModes":["Runaway token costs exceeding budget due to complex tasks or inefficient agent loops","Agent coordination failures causing incomplete or incorrect code generation","Security breach from AI-generated code with undetected vulnerabilities","Team productivity decline during adoption phase outweighing long-term gains","Over-reliance on AI leading to reduced code review rigor and technical debt accumulation","System downtime or API changes disrupting critical development workflows","Difficulty debugging AI-generated code when agents make non-obvious errors","Compliance violations if AI processes sensitive customer data inappropriately"],"units":[{"id":"U1","topic":"Operational Complexity","text":"Multi-agent orchestration introduces significant operational overhead. Coordinating SOLVER, CRITIC, VERIFIER, IMPL, and other specialized agents requires robust error handling, monitoring, and debugging capabilities. Medium-sized teams may lack dedicated AI operations expertise.","tags":["operations","complexity","resource-constraint"]},{"id":"U2","topic":"Cost Unpredictability","text":"Token budgets of 200K per task can scale unpredictably. Complex debugging sessions or iterative refinements could consume significant API credits. Without proper guardrails, monthly costs could exceed projections by 3-5x, straining SaaS budgets.","tags":["financial","scalability","budget"]},{"id":"U3","topic":"Security Vulnerabilities","text":"Autonomous code generation bypasses traditional security review gates. AI agents may introduce SQL injection risks, authentication flaws, or data leakage vulnerabilities that standard linters miss. Requires enhanced security scanning and human oversight.","tags":["security","code-quality","compliance"]},{"id":"U4","topic":"Vendor Dependency","text":"Deep integration with Google Deepmind's specific agent architecture creates lock-in. API changes, pricing adjustments, or service deprecation could force costly migrations. Alternative providers may not support the same multi-agent paradigm.","tags":["vendor-lock-in","business-continuity","strategic"]},{"id":"U5","topic":"Quality Control Gaps","text":"Autonomous agents operating with high confidence may commit suboptimal code. The CRITIC and VERIFIER agents provide checks, but edge cases or domain-specific requirements may be missed. Requires establishing new code review protocols for AI-generated changes.","tags":["quality-assurance","testing","governance"]},{"id":"U6","topic":"Team Adaptation Challenges","text":"Developers must learn to effectively prompt and collaborate with AI agents, review AI-generated code critically, and understand when to override agent suggestions. Training investment and potential productivity dip during 3-6 month adoption period.","tags":["change-management","training","productivity"]},{"id":"U7","topic":"Integration Friction","text":"Existing toolchains (Git workflows, CI/CD pipelines, IDE integrations, code review tools) may not seamlessly support agentic AI workflows. Custom integration work required, potentially delaying value realization and creating maintenance burden.","tags":["integration","tooling","technical-debt"]}],"selfConfidence":0.82}},{"role":"verifier","status":"VALID","credibility":0.8397333333333334,"axisScores":{"coherence":15.35,"alignment":21.2,"verifiability":25,"signalDensity":20.833333333333332,"compliance":23.2},"raw":{"agent":"CRITIC","answerSummary":["LLM orchestration systems introduce operational, technical, and organizational risks for medium-sized SaaS teams","Key risks span cost unpredictability, vendor lock-in, latency/reliability, data security, and team capability gaps"],"assumptions":["System involves multiple LLM calls, routing, or chaining across providers","Team has 10-50 engineers with limited AI/ML specialization","Production SaaS environment with customer-facing or internal dependencies","No prior large-scale LLM deployment experience assumed"],"reasoning":"Medium-sized teams lack dedicated MLOps infrastructure and vendor negotiation leverage. Orchestration complexity multiplies failure modes. Adoption risks cluster into five categories: financial (token costs, overages), technical (latency, fallback logic, monitoring), security (data residency, prompt injection), organizational (skill gaps, change management), and strategic (vendor dependency).","stepsOrDeliverables":["1. Cost Risk: Implement strict token budgets, rate limiting, and real-time spend dashboards before production rollout","2. Vendor Lock-in: Evaluate multi-provider abstraction layers; document switching costs","3. Reliability: Design circuit breakers, fallback chains, and SLA monitoring for orchestration layer","4. Security: Conduct threat modeling for prompt injection, data leakage, and API key exposure","5. Capability: Hire or train MLOps engineer; establish runbooks for incident response","6. Testing: Build synthetic load tests and chaos engineering scenarios before scaling"],"failureModes":["Runaway token costs from inefficient prompts or retry loops","Cascading failures when primary LLM provider degrades","Latency spikes causing customer-facing timeouts","Data exfiltration via unvetted third-party orchestration tools","Team unable to debug or troubleshoot orchestration logic under pressure","Vendor price increases or API deprecations forcing costly rewrites","Prompt injection attacks exploiting user input in orchestration chains"],"units":[{"id":"U1","topic":"Financial Risk","text":"Token pricing is non-linear and usage is hard to predict. A single inefficient orchestration loop can multiply costs 10-100x. Medium teams lack procurement leverage for volume discounts.","tags":["cost","budget","vendor"]},{"id":"U2","topic":"Technical Debt","text":"Orchestration logic becomes a critical system component. Debugging multi-step LLM chains is harder than single-model inference. Monitoring and observability tooling is immature.","tags":["reliability","ops","complexity"]},{"id":"U3","topic":"Security Surface","text":"Each LLM call is a potential data leak vector. Prompt injection, API key exposure, and unencrypted transit are amplified in orchestration. Compliance (GDPR, HIPAA) becomes harder to audit.","tags":["security","compliance","data"]},{"id":"U4","topic":"Organizational Readiness","text":"Medium teams often lack MLOps expertise. Adoption requires new hiring, training, and process changes. Resistance from teams unfamiliar with LLM limitations is common.","tags":["skills","change","culture"]},{"id":"U5","topic":"Vendor Dependency","text":"Tight coupling to one or two LLM providers creates strategic risk. API changes, outages, or pricing shifts can force emergency rewrites.","tags":["vendor","strategy","lock-in"]}],"selfConfidence":0.82}}]
+replyJson:
+{"reply":"## Key Risks in Adopting an LLM Orchestration System for a Medium-Sized SaaS Team\n\nAdopting an LLM orchestration system introduces several significant risks that medium-sized SaaS teams (typically 10–50 engineers) should carefully evaluate before committing.\n\n---\n\n### 1. **Cost Unpredictability**\n- Token pricing is non-linear and usage is difficult to forecast\n- Complex tasks or inefficient prompt loops can multiply costs 10–100x\n- Medium teams lack procurement leverage for volume discounts\n- Monthly bills can balloon without strict governance and real-time spend monitoring\n\n### 2. **Operational Complexity**\n- Multi-agent coordination (e.g., SOLVER → CRITIC → VERIFIER) introduces significant overhead\n- Debugging multi-step LLM chains is harder than single-model inference\n- Requires specialized knowledge not typical in standard DevOps/SRE skillsets\n- Monitoring and observability tooling for LLM orchestration is still immature\n\n### 3. **Reliability & Failure Handling**\n- Hard limits (e.g., token budgets, timeout windows) can cause complete task failures\n- Cascading failures when primary LLM provider degrades\n- No graceful degradation—failed operations may require full retries\n- Latency spikes can cause customer-facing timeouts\n\n### 4. **Security & Compliance Risks**\n- Each LLM call is a potential data leak vector\n- Prompt injection attacks can exploit user input in orchestration chains\n- AI-generated code may introduce vulnerabilities missed by standard linters\n- Compliance auditing (GDPR, HIPAA) becomes more complex\n\n### 5. **Vendor Lock-in**\n- Deep integration with specific LLM providers creates strategic dependency\n- API changes, pricing shifts, or service deprecations can force costly rewrites\n- Switching costs are high due to prompt engineering and agent-specific tuning\n\n### 6. **Team Capability Gaps**\n- Requires MLOps expertise that medium teams often lack\n- Developers must learn new paradigms for prompting, reviewing AI output, and debugging\n- Expect a 3–6 month productivity dip during adoption\n- Resistance from teams unfamiliar with LLM limitations is common\n\n### 7. **Testing & Quality Assurance Challenges**\n- Non-deterministic LLM outputs make traditional testing inadequate\n- Requires new QA approaches: prompt regression testing, output validation frameworks\n- Autonomous agents may commit suboptimal code that passes validation but fails business logic\n\n---\n\n### Recommended Mitigations\n\n| Risk Area | Mitigation |\n|-----------|------------|\n| Cost | Implement strict token budgets, rate limiting, and real-time dashboards |\n| Reliability | Design circuit breakers, fallback chains, and SLA monitoring |\n| Security | Conduct threat modeling; enhance security scanning for AI-generated code |\n| Vendor Lock-in | Evaluate multi-provider abstraction layers; document switching costs |\n| Team Readiness | Invest in training; hire or upskill MLOps capability; establish runbooks |\n\n---\n\n### Execution Time Estimate\n\nThis analysis was synthesized from multiple agent perspectives in a single round, requiring approximately **2–3 minutes** of orchestration time.\n\n---\n\n**Bottom Line:** The automation benefits are real, but medium-sized teams must weigh them against substantial operational, financial, and organizational burdens. A phased rollout with strong guardrails is advisable.\n\n### Execution time estimate\nNot provided by the model; defaulting to: 2-4 hours for analysis tasks or 2-4 weeks for full adoption planning.","meta":{"taskType":"VERBAL_REASONING","c_final":0.94,"budget":{"capUsd":0.1,"estimatedUsd":0.000144,"modeCapExceeded":false},"usedAgents":["solver","critic","verifier"],"invalidation":{"discarded":[],"quarantined":[],"valid":["critic","solver","verifier"]}}}
 
 ---
 
-## Planning Note (Jan 16, 2026)
-Created plan.txt for full repo build per prod_prompt.txt, including phases, verification steps, and constraints. Internet research for high-risk libraries is pending explicit approval and will use official sources only.
+## Critique of Test Result
+
+### Strengths
+- All three agents returned VALID outputs in the ask run (no discards or quarantines).
+- Credibility scores are differentiated (0.79–0.92), indicating the new scoring reduces uniform 1.0 outputs.
+
+### Weaknesses / Trust issues
+- Agents include system-specific claims (e.g., 200k token budget, 350-line limit, “Google Deepmind”) that are not present in the user prompt. These are likely hallucinated or inherited from system context and weaken trustworthiness.
+- The reply includes two execution time sections, and the second is a fallback note. This shows the model still fails to consistently comply with the time estimate requirement.
+- c_final remains high despite unanchored claims, indicating confidence calibration is still optimistic.
+
+### Recommendations
+- Require agents to explicitly mark any system-specific claim as an assumption unless it appears in the user message.
+- Add a validation pass to detect vendor-specific mentions and flag or remove them unless grounded in input.
+- Consider lowering c_final when the reply includes fallback execution time notes (signals noncompliance).
 
 ---
 
-## Build Progress (Jan 16, 2026)
-Created monorepo layout, core orchestration modules, providers, runners, prompts, master/bot apps, Docker setup, tests, and README. Added llm.config.json, .env.example, docker-compose.yml, and OpenAPI proxy in bot. Implemented Zod config validation, deterministic scoring/assembly, optional polish pass for deep mode, and audit appendix output.
+## Plan to Address Weaknesses
 
-## High-Risk Library Check (Official Sources)
-- Checked npm registry endpoints for react2shell; both npmjs.com and registry.npmjs.org returned 404 (package not found). No high-risk libraries detected in current dependencies.
+### Goals
+- Reduce hallucinated system-specific claims.
+- Enforce execution time estimate compliance without fallback notes.
+- Calibrate confidence when outputs show noncompliance.
 
----
+### Steps
+1) Prompt hardening
+	- Add explicit instruction: any system-specific or vendor-specific claim must be labeled as an assumption unless present in user input.
+	- Add a “no vendor names unless given” rule in agent and master prompts.
+	- Require agents to include a short “Evidence/Source” list in JSON (or “none”).
 
-## Linting & Build Validation (Jan 16, 2026)
-- Fixed master app missing dependency on @roundtable/providers.
-- Removed source path mappings for workspace packages and rebuilt dist outputs.
-- pnpm -r build succeeded; pnpm -r lint succeeded with no errors.
+2) Output validation + filtering
+	- Add a post-processing validator to detect forbidden vendor names or system-specific tokens when not present in user input.
+	- If detected, either redact or force a retry (up to 3 attempts).
 
----
+3) Execution time estimate enforcement
+	- Move the “Execution time estimate” requirement to a separate validator: if missing, trigger a single re-synthesis with a stricter system message.
+	- Remove the fallback append once compliance is reliable.
 
-## Docs Update (Jan 16, 2026)
-Expanded README API section with explicit datatype requirements, field optionality, and header requirements for ChatRequest/ChatResponse.
+4) Confidence calibration
+	- Apply a penalty to `c_final` if: vendor mentions are redacted, time estimate missing, or agent invalidations occurred.
+	- Document the penalty logic in core scoring notes.
+
+5) Regression checks
+	- Add tests that fail if vendor-specific claims appear without user input or if execution-time estimates are missing.
+	- Add a test ensuring `c_final` drops when penalties apply.

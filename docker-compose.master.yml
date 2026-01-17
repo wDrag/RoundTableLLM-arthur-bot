@@ -1,0 +1,24 @@
+services:
+  master:
+    build:
+      context: .
+      dockerfile: apps/master/Dockerfile
+    ports:
+      - "8787:8787"
+    environment:
+      - PORT=8787
+      - MASTER_API_KEY=${MASTER_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_VERSION=${ANTHROPIC_VERSION}
+      - REQUEST_TIMEOUT_MS=${REQUEST_TIMEOUT_MS}
+      - RUNNER_CONCURRENCY=${RUNNER_CONCURRENCY}
+    volumes:
+      - master-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "dist/healthcheck.js"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  master-data:

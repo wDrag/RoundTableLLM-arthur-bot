@@ -1,37 +1,65 @@
-You are a senior TS/Node engineer. Build a production-ready repo implementing:
-- Discord bot UX (/ask, /audit, /deep)
-- Deterministic Master Orchestrator API (master is code, adds no new claims)
-- Multi-agent committee runners (Anthropic now via API; OpenAI + xAI adapters as placeholders)
-- Numeric scoring + invalidation thresholds + deterministic assembly (DAA)
-- Workflow interaction rule: ask user only if c_final < 0.70, exactly one A/B/C question
-- Docker-first deployment on Ubuntu VPS
+You are a senior TS/Node engineer. Build a production-ready repo implementing a multi-agent LLM system with an LLM Master (non-deterministic orchestration), deployed via Docker on an Ubuntu VPS. The Discord bot service will run separately (outside this stack), but the master must support Discord-compatible payloads.
 
-CRITICAL NEW REQUIREMENT: llm.config.json
-- Add repo-root file: ./llm.config.json
-- All model/provider choices must come from this file (no hardcoded model names in code).
-- Must be easy to swap models without code changes.
+HIGH-LEVEL GOAL
+- Master is an LLM that:
+  - determines task type
+  - decides which agents to wake up
+  - synthesizes the final response
+  - produces an audit appendix for /audit and /deep
+- We are explicitly INVALIDATING the prior constraints that:
+  - "Master is code only"
+  - "DAA deterministic assembly is required"
+- Keep numeric scoring and thresholds as governance signals (not determinism enforcement).
 
-Repo layout:
+MODES
+- /ask: concise final response; include time estimate when a plan exists
+- /audit: includes audit appendix when available
+- /deep: expanded response and audit appendix when available
+
+MANDATORY RULE - TIME ESTIMATE ON PLANS
+Whenever any output includes a plan (ordered steps, roadmap, implementation steps, runbook), the final response MUST include:
+### Execution time estimate
+- Per-step: O/M/P and E=(O+4M+P)/6
+- Total: O_total/M_total/P_total/E_total
+- Assumptions + risks + confidence-in-estimate
+If the master omits this section, the system appends a default estimate note.
+
+RUNTIME TARGET
+- Docker-first on Ubuntu VPS
+- Provide docker-compose for master only (bot is separate)
+- Provide a /health endpoint for readiness checks
+
+TECH STACK
+- Node 20+, TypeScript (ESM), pnpm workspaces
+- HTTP: Fastify with schema validation (static internal schemas only)
+- Validation: Zod for internal parsing + strict TS config
+- Provider: Anthropic via HTTP API now; add OpenAI + xAI adapters later
+- Storage: sqlite recommended for run logs + audit artifacts (simple, portable)
+
+REPO LAYOUT (monorepo, keep it)
 /
   llm.config.json
+  docker-compose.master.yml
   .env.example
-  docker-compose.yml
-  /apps
-    /bot
-      Dockerfile
-      src/...
-    /master
-      Dockerfile
-      src/...
-  /packages
-    /core
-    /providers
-    /runners
-    /prompts
-    /tests
   README.md
+  /apps
+    /master               # Fastify API (LLM Master lives here)
+  /packages
+    /core                 # shared types, schemas, scoring, routing helpers
+    /providers            # anthropic/openai/xai adapters
+    /runners              # agent runner engine, retries, JSON schema enforcement
+    /prompts              # system prompts per role, output JSON schema prompts
+    /tests                # shared tests + golden fixtures
 
-llm.config.json schema (define and validate with Zod at runtime):
+CRITICAL REQUIREMENT: llm.config.json (model switching without code edits)
+- Add repo-root ./llm.config.json
+- All provider + model selection must come from this file
+- No hardcoded model IDs in code
+- Model identifiers are resolved via ENV VAR NAMES stored in config:
+  - Example: config has "model": "CLAUDE_MODEL_SOLVER"
+  - Runtime resolves: modelId = process.env["CLAUDE_MODEL_SOLVER"]
+
+llm.config.json schema (validate with Zod at runtime):
 {
   "version": 1,
   "providers": {
@@ -45,6 +73,7 @@ llm.config.json schema (define and validate with Zod at runtime):
     "xai": { "enabled": false, "apiKeyEnv": "XAI_API_KEY" }
   },
   "models": {
+    "master": { "provider": "anthropic", "model": "CLAUDE_MODEL_MASTER", "temperature": 0.2, "maxTokens": 2000 },
     "roles": {
       "solver":   { "provider": "anthropic", "model": "CLAUDE_MODEL_SOLVER", "temperature": 0.2, "maxTokens": 1600 },
       "critic":   { "provider": "anthropic", "model": "CLAUDE_MODEL_CRITIC", "temperature": 0.2, "maxTokens": 1200 },
@@ -53,78 +82,215 @@ llm.config.json schema (define and validate with Zod at runtime):
       "visual":   { "provider": "anthropic", "model": "CLAUDE_MODEL_VISUAL", "temperature": 0.1, "maxTokens": 1400 },
       "promptsmith": { "provider": "openai", "model": "OPENAI_MODEL_PROMPTSMITH", "temperature": 0.2, "maxTokens": 1600 },
       "grok":        { "provider": "xai",    "model": "XAI_MODEL_GROK", "temperature": 0.2, "maxTokens": 1600 }
-    },
-    "taskTypeOverrides": {
-      "PROMPT_ENGINEERING": { "promptsmith": { "enabled": true }, "grok": { "enabled": true } },
-      "VISUAL_ANALYSIS": { "grok": { "enabled": false } }
     }
   },
-  "cost": {
+  "policy": {
     "normalMaxUsd": 0.10,
-    "deepMaxUsd": 0.50
+    "deepMaxUsd": 0.50,
+    "askUserThreshold": 0.70,
+    "verifierWakeThreshold": 0.80,
+    "tauHard": 0.45,
+    "tauSoft": 0.60
   }
 }
 
-IMPORTANT: The "model" fields above are ENV-VAR NAMES (strings), not the model IDs.
-At runtime, resolve: actualModelId = process.env[modelEnvName].
-This makes swapping models an env change or config change without code edits.
+API CONTRACT
+POST /api/chat
+Request:
+{
+  "source": "discord" | "cli" | "http",
+  "mode": "ask" | "audit" | "deep",
+  "user": { "id": string, "name": string },
+  "context": { "channelId"?: string, "guildId"?: string, "messageId"?: string },
+  "message": string,
+  "attachments"?: [{ "filename": string, "url": string, "contentType"?: string }]
+}
+Response:
+{
+  "reply": string,
+  "meta": {
+    "taskType": "PROMPT_ENGINEERING"|"VERBAL_REASONING"|"TECHNICAL_EXECUTION"|"VISUAL_ANALYSIS"|"MIXED",
+    "c_final": number,
+    "budget": { "capUsd": number, "estimatedUsd": number, "modeCapExceeded": boolean },
+    "usedAgents": string[],
+    "invalidation": { "discarded": string[], "quarantined": string[], "valid": string[] }
+  },
+  "audit"?: {
+    "plan": string,
+    "decisions": Array<{ "key": string, "value": string }>,
+    "disagreements": string[],
+    "timeEstimate"?: any,
+    "costing"?: any,
+    "usingQuarantined"?: string,
+    "unitsUsed"?: string[]
+  }
+}
 
-Implementation tasks:
-1) Config loader
-- Read llm.config.json at startup (and optionally watch for changes if CONFIG_WATCH=1).
-- Validate with Zod, fail fast with clear error messages.
-- Expose a function getModelForRole(role, taskType, mode) -> {provider, modelId, temperature, maxTokens}
+CORE ARCHITECTURE (LLM MASTER)
+- The master is an LLM call that outputs a strict JSON "OrchestrationPlan":
+  {
+    "taskType": "...",
+    "needsClarification": boolean,
+    "clarificationQuestion"?: { "question": string, "options": ["A ...","B ...","C ..."] },
+    "agentsToRun": ["solver","critic","verifier", ...],
+    "rounds": 1|2|3,
+    "focus": string[],
+    "expectedOutputShape": "ask"|"audit"|"deep",
+    "confidenceTarget": number
+  }
+- The code validates the plan (Zod) and executes it.
+- Agents are run with strict JSON outputs (no free text).
 
-2) Providers
-- Implement AnthropicProvider using fetch:
-  POST {baseUrl}/v1/messages
-  Headers: x-api-key (from env), anthropic-version (from env), content-type: application/json
-  Body: { model, max_tokens, messages }
-- Implement token counting endpoint for budget estimation:
-  POST {baseUrl}/v1/messages/count_tokens
-- OpenAIProvider and XaiProvider as stubs behind enabled flags (throw clear "disabled" errors).
+TASK TYPE
+- Determined by the Master model primarily.
+- Still implement a cheap deterministic pre-classifier for obvious cases (attachments -> visual, code fences -> technical) and pass as hint into master prompt.
+- Final taskType in meta is the Master-decided value.
 
-3) Docker-first
-- apps/master and apps/bot each have a multi-stage Dockerfile.
-- docker-compose.yml:
-  - master exposed on 8787
-  - master has /health
-  - bot depends_on master with condition: service_healthy
-  - volume master-data mounted at /app/data
+AGENT OUTPUT SCHEMA (STRICT JSON)
+Each agent must output:
+{
+  "agent": "SOLVER"|"CRITIC"|"VERIFIER"|"IMPL"|"VISUAL"|"PROMPTSMITH"|"GROK",
+  "answerSummary": string[],
+  "assumptions": string[],
+  "reasoning": string,
+  "stepsOrDeliverables": string[],
+  "failureModes": string[],
+  "units": [{ "id": string, "topic": string, "text": string, "tags": string[] }],
+  "selfConfidence": number
+}
+Visual agent adds:
+{
+  "imageEvidence": string[],
+  "imageCues": string[]
+}
 
-4) Master service
-- Fastify + JSON schema validation (schemas must be static/internal, never user-supplied).
-- POST /api/chat accepts {source, mode, user, context, message, attachments}
-- Implements task classifier and committee wake-up only when needed:
-  - /ask: fast path (solver + verifier unless task requires more)
-  - /audit: deep metadata, but still deterministic output
-  - /deep: full committee + optional Editor polish pass
-- Deterministic scoring and assembly rules from requirements:
-  - Cred axes, thresholds (hard 0.45, soft 0.60), weight reallocation
-  - Merge pool only VALID (>=0.60)
-  - Conflicts go to DISAGREEMENTS, no resolution by master
+SCORING + INVALIDATION (GOVERNANCE SIGNALS, NOT DAA)
+- Compute CredibilityScore with 5 axes (0..25 each):
+  Coherence, Alignment, Verifiability, SignalDensity, Compliance
+  Cred_i uses axis scores plus content-quality heuristics and agent selfConfidence calibration
+- Optional PCS (peer calibration) on high conflict:
+  λ = 0.08
+  Cred_i = (1-λ)*MasterScore_i + λ*PeerMean_i
+- Status:
+  Cred_i < tauHard => DISCARD
+  tauHard <= Cred_i < tauSoft => QUARANTINE
+  Cred_i >= tauSoft => VALID
 
-5) Workflow c_final and ask-user rule
-- Compute c_final deterministically from requirements-based scoring.
-- If c_final < 0.70 ask exactly ONE A/B/C question, else ship.
+IMPORTANT CHANGE:
+- Do NOT implement DAA deterministic merge.
+- Instead: Master synthesizes final output using:
+  - VALID outputs preferentially
+  - QUARANTINED outputs only if master explicitly flags "using quarantined info" + explains why in audit
+  - DISCARD outputs ignored
+- Conflicts must be surfaced as "Disagreements" in /audit and /deep.
 
-6) Output contract
-Always include:
-- TL;DR (1-3 lines)
-- Main answer (Markdown)
-- Assumptions ledger
-- Confidence score
-For /audit and /deep include full audit appendix: task type, weights, axis scores, statuses, merge trace tags, quarantine reasons, disagreements, budget estimation.
-For /deep only: optional LLM polish pass that MUST NOT add new claims beyond merged units; include list of unit IDs used.
+WORKFLOW CONFIDENCE (c_final)
+Compute c_final as a hybrid:
+- Base = weighted mean of VALID Cred_i (weights from llm.config.json or fixed table)
+- Adjustments:
+  - conflictPenalty based on number of major conflicts detected by Master
+  - coverageBonus if requirements coverage is high (Master provides count)
+- c_final used for ask-user rule:
+- c_final used for ask-user rule:
+  - if c_final < askUserThreshold => ask exactly one A/B/C clarification question (and STOP)
+  - else proceed
 
-7) Tests
-- Unit tests for config parsing + model resolution logic
-- Golden test: given saved agent outputs, /ask output is byte-identical (except timestamps)
-- Budget test: /ask enforces 0.10 best-effort via call limiting, /deep allows 0.50
+RETRY RULE
+- If any outputs are invalidated (DISCARD or QUARANTINE) or c_final is below askUserThreshold, rerun agents/synthesis up to 3 attempts.
+- After max retries, proceed with ask-user rule or final response.
 
-At the end, output:
-- A .env.example listing required env vars (Discord + Anthropic + optional OpenAI/xAI)
-- A README with:
-  - docker compose up -d
-  - curl health check
+BUDGET POLICY
+- /ask and /audit cap: policy.normalMaxUsd
+- /deep cap: policy.deepMaxUsd
+- If budget pressure: reduce rounds, drop optional agents first, shrink maxTokens
+
+PROVIDERS
+Implement provider interface:
+interface LlmProvider {
+  name: string
+  complete(input: {
+    system: string,
+    messages: {role:"user"|"assistant", content:string}[],
+    temperature?: number,
+    maxTokens?: number,
+    jsonMode?: { schema: object }  // enforce JSON-only output
+  }): Promise<string>
+  countTokens?(...): Promise<number>
+  estimateCost?(...): number
+}
+
+Implement AnthropicProvider via HTTP API:
+- POST https://api.anthropic.com/v1/messages
+- headers:
+  - x-api-key: env
+  - anthropic-version: env (default 2023-06-01)
+  - content-type: application/json
+- token counting: POST /v1/messages/count_tokens
+
+DOCKER (MASTER ONLY)
+- docker-compose.master.yml runs only apps/master
+- /health endpoint 200 JSON
+- persist ./data via docker volume
+
+STORAGE / LOGGING
+- sqlite DB storing:
+  - request payload
+  - orchestration plan
+  - agent raw outputs
+  - scores + statuses
+  - final reply + audit appendix
+- structured logs with request id
+
+TESTING
+- Validate:
+  - llm.config.json parsing + env resolution
+  - OrchestrationPlan JSON schema validation
+  - Agent JSON outputs validation
+  - ask-user rule (exactly one A/B/C question when c_final < threshold)
+  - presence of Execution time estimate when a plan exists (regression test)
+- Golden test is NO LONGER "byte-identical" output because Master is non-deterministic.
+  Replace with:
+  - schema-level invariants + content invariants:
+    - must include TL;DR
+    - must include confidence
+    - must include assumptions
+    - must include time estimate if plan exists
+    - must not reference DISCARDED outputs
+    - must list disagreements in audit/deep if conflicts exist
+
+DELIVERABLES
+- Working repo:
+  - pnpm i
+  - pnpm build
+  - docker compose -f docker-compose.master.yml up -d
+- README includes:
+  - env vars checklist
   - how to change models via llm.config.json + env vars
+  - how to run smoke tests
+
+GUIDANCE: MIGRATION FROM ZCM (deterministic master + DAA) TO LLM MASTER
+Implement as a controlled refactor:
+1) Keep existing agent runner + scoring modules.
+2) Remove DAA merge module and replace with "MasterSynthesizer" LLM call:
+   - Input: user request, orchestration plan, VALID/QUARANTINE agent outputs, scores, conflicts
+   - Output: final reply + audit appendix (JSON)
+3) Replace deterministic task router with:
+   - deterministic hints + Master classification
+4) Replace deterministic golden tests with invariant tests (see above).
+5) Add guardrails:
+   - Master must cite which agent units it relied on (unit ids) in audit/deep
+   - Master must not use DISCARDED outputs
+   - QUARANTINED use requires explicit justification in audit
+6) Rollout flags:
+   - env MASTER_MODE=zcm|llm (default llm)
+   - env DISABLE_QUARANTINE_USE=1 (optional strict mode)
+
+Before finalizing, output:
+- .env.example with all env vars
+- 5 manual acceptance tests to run on VPS
+- Execution time estimate for the build plan itself (use the mandatory format)
+
+IMPORTANT
+- Do not handwave. Write real code with types, error handling, and minimal dependencies.
+- Prefer clarity over cleverness.
+- Master and agents MUST output strict JSON where required, validated with Zod.

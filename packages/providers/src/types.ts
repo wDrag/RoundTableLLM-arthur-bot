@@ -6,6 +6,7 @@ export interface LLMRequest {
   messages: AgentMessage[];
   temperature: number;
   maxTokens: number;
+  jsonMode?: { schema: object };
 }
 
 export interface LLMResponse {
@@ -17,6 +18,7 @@ export interface TokenCountResponse {
 }
 
 export interface LLMProvider {
+  name: ProviderName;
   call(request: Omit<LLMRequest, "provider">, signal?: AbortSignal): Promise<LLMResponse>;
   countTokens(
     request: Omit<LLMRequest, "provider">,

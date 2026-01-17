@@ -9,6 +9,7 @@ const stableHash = (input: string): string => {
 };
 
 export class DummyProvider implements LLMProvider {
+  name = "dummy" as const;
   async call(request: Omit<LLMRequest, "provider">): Promise<LLMResponse> {
     const fingerprint = stableHash(JSON.stringify(request.messages));
     const text = [

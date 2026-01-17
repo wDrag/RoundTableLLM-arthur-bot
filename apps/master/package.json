@@ -18,7 +18,9 @@
         "@roundtable/providers": "workspace:*",
         "@roundtable/prompts": "workspace:*",
         "@roundtable/runners": "workspace:*",
-        "fastify": "^4.28.1"
+        "fastify": "^4.28.1",
+        "sqlite": "^5.1.1",
+        "sqlite3": "^5.1.7"
     },
     "devDependencies": {
         "vitest": "^1.6.0"

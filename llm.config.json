@@ -3,7 +3,7 @@
     "providers": {
         "anthropic": {
             "enabled": true,
-            "baseUrl": "https://api.anthropic.com",
+            "baseUrl": "https://1gw.gwai.cloud/",
             "apiKeyEnv": "ANTHROPIC_API_KEY",
             "anthropicVersionEnv": "ANTHROPIC_VERSION"
         },
@@ -17,34 +17,40 @@
         }
     },
     "models": {
+        "master": {
+            "provider": "anthropic",
+            "model": "claude-opus-4-5",
+            "temperature": 0.2,
+            "maxTokens": 2000
+        },
         "roles": {
             "solver": {
                 "provider": "anthropic",
-                "model": "CLAUDE_MODEL_SOLVER",
+                "model": "claude-sonnet-4-5",
                 "temperature": 0.2,
                 "maxTokens": 1600
             },
             "critic": {
                 "provider": "anthropic",
-                "model": "CLAUDE_MODEL_CRITIC",
+                "model": "claude-sonnet-4-5",
                 "temperature": 0.2,
                 "maxTokens": 1200
             },
             "verifier": {
                 "provider": "anthropic",
-                "model": "CLAUDE_MODEL_VERIFIER",
+                "model": "claude-haiku-4-5",
                 "temperature": 0.0,
                 "maxTokens": 1200
             },
             "impl": {
                 "provider": "anthropic",
-                "model": "CLAUDE_MODEL_IMPL",
+                "model": "claude-sonnet-4-5",
                 "temperature": 0.2,
                 "maxTokens": 1800
             },
             "visual": {
                 "provider": "anthropic",
-                "model": "CLAUDE_MODEL_VISUAL",
+                "model": "claude-sonnet-4-5",
                 "temperature": 0.1,
                 "maxTokens": 1400
             },
@@ -77,8 +83,12 @@
             }
         }
     },
-    "cost": {
+    "policy": {
         "normalMaxUsd": 0.10,
-        "deepMaxUsd": 0.50
+        "deepMaxUsd": 0.50,
+        "askUserThreshold": 0.70,
+        "verifierWakeThreshold": 0.80,
+        "tauHard": 0.45,
+        "tauSoft": 0.60
     }
 }

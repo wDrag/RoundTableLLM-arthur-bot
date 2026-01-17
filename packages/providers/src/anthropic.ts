@@ -15,6 +15,7 @@ const toAnthropicPayload = (
 };
 
 export class AnthropicProvider implements LLMProvider {
+  name = "anthropic" as const;
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly anthropicVersion: string;
@@ -44,7 +45,8 @@ export class AnthropicProvider implements LLMProvider {
       model: request.modelId,
       max_tokens: request.maxTokens,
       temperature: request.temperature,
-      ...toAnthropicPayload(request)
+      ...toAnthropicPayload(request),
+      ...(request.jsonMode ? { response_format: { type: "json" } } : {})
     };
 
     const response = await fetch(`${this.baseUrl}/v1/messages`, {

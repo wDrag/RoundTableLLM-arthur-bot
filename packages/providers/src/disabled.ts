@@ -1,10 +1,11 @@
 import { ProviderDisabledError } from "@roundtable/core";
 import type { LLMProvider, LLMRequest, LLMResponse, TokenCountResponse } from "@/types.js";
+import type { ProviderName } from "@roundtable/core";
 
 export class DisabledProvider implements LLMProvider {
-  private readonly name: string;
+  name: ProviderName;
 
-  constructor(name: string) {
+  constructor(name: ProviderName) {
     this.name = name;
   }
 

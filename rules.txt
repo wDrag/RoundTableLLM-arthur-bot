@@ -26,7 +26,7 @@ it MUST include an "Execution time estimate" section.
 Required format (machine-checkable):
 
 ### Execution time estimate
-- Unit: minutes or hours (pick one and be consistent)
+- Unit: minutes or hours (pick one and be clear and consistent)
 - Per-step estimates (3-point):
   - Step 1: O=?, M=?, P=?, E=? where E = (O + 4M + P) / 6
   - Step 2: ...
@@ -41,3 +41,7 @@ Required format (machine-checkable):
 Enforcement:
 - The deterministic Master must validate that this block exists whenever a plan exists.
 - If missing, Master returns a single A/B/C clarification request or asks the generating agent to regenerate with the required block.
+
+Planning rule (effective immediately)
+- Whenever you propose a plan, you must write it to plan.txt.
+- If the plan confidence is below 0.8, include explicit questions in plan.txt to raise confidence to ≥ 0.8.

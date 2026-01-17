@@ -1,4 +1,5 @@
 import { callLLM, countTokensForRole } from "@roundtable/providers";
+import { agentOutputSchema, computeAxisScores, computeCredibilityFromAxes } from "@roundtable/core";
 import type { AgentMessage, AgentOutput, Mode, RoleName, TaskType } from "@roundtable/core";
 
 export interface AgentRunRequest {
@@ -29,22 +30,43 @@ const runSingleAgent = async (request: AgentRunRequest): Promise<AgentOutput> =>
     request.timeoutMs
   );
   const durationMs = Date.now() - start;
-  const { confidence, risk } = extractConfidenceRisk(response.text);
+  const rawJson = parseAgentJson(response.text, request.role);
+  const axisScores = computeAxisScores(rawJson);
+  const credibility = computeCredibilityFromAxes(axisScores, rawJson.selfConfidence);
   return {
     role: request.role,
-    content: response.text,
-    confidence,
-    risk,
+    raw: rawJson,
+    axisScores,
+    credibility,
     durationMs
   };
 };
 
-const extractConfidenceRisk = (text: string): { confidence: number; risk: number } => {
-  const confidenceMatch = text.match(/Confidence\s*score:\s*([0-1](?:\.\d+)?)/i);
-  const riskMatch = text.match(/Risk\s*score:\s*([0-1](?:\.\d+)?)/i);
+const parseAgentJson = (text: string, role: RoleName) => {
+  const trimmed = text.trim();
+  const jsonStart = trimmed.indexOf("{");
+  const jsonEnd = trimmed.lastIndexOf("}");
+  const jsonText =
+    jsonStart >= 0 && jsonEnd > jsonStart ? trimmed.slice(jsonStart, jsonEnd + 1) : trimmed;
+  try {
+    const parsed = JSON.parse(jsonText);
+    const result = agentOutputSchema.safeParse(parsed);
+    if (result.success) {
+      return result.data;
+    }
+  } catch {
+    // fall through to fallback
+  }
+  const summary = trimmed.length > 0 ? trimmed.slice(0, 500) : "No response text available.";
   return {
-    confidence: confidenceMatch ? Number(confidenceMatch[1]) : 0.5,
-    risk: riskMatch ? Number(riskMatch[1]) : 0.3
+    agent: role,
+    answerSummary: [summary],
+    assumptions: [],
+    reasoning: summary,
+    stepsOrDeliverables: [],
+    failureModes: ["Agent response was not valid JSON."],
+    units: [],
+    selfConfidence: 0
   };
 };
 

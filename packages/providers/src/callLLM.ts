@@ -1,5 +1,6 @@
+import { appendFile } from "node:fs/promises";
 import { getConfig, getModelForRole } from "@roundtable/core";
-import type { AgentMessage, Mode, RoleName, TaskType } from "@roundtable/core";
+import type { AgentMessage, Mode, ProviderName, RoleName, TaskType } from "@roundtable/core";
 import { AnthropicProvider } from "@/anthropic.js";
 import { DisabledProvider } from "@/disabled.js";
 import { DummyProvider } from "@/dummy.js";
@@ -7,11 +8,12 @@ import { OpenAIProvider } from "@/openai.js";
 import { XaiProvider } from "@/xai.js";
 import type { LLMProvider, LLMResponse, TokenCountResponse } from "@/types.js";
 
-const providerCache: Record<string, LLMProvider> = {};
+const providerCache: Partial<Record<ProviderName, LLMProvider>> = {};
 
-const getProvider = (name: string): LLMProvider => {
-  if (providerCache[name]) {
-    return providerCache[name];
+const getProvider = (name: ProviderName): LLMProvider => {
+  const cached = providerCache[name];
+  if (cached) {
+    return cached;
   }
   const config = getConfig().providers;
   switch (name) {
@@ -29,11 +31,46 @@ const getProvider = (name: string): LLMProvider => {
     case "dummy":
       providerCache[name] = new DummyProvider();
       break;
-    default:
-      providerCache[name] = new DummyProvider();
-      break;
   }
-  return providerCache[name];
+  return providerCache[name] ?? new DummyProvider();
+};
+
+const logProviderError = async (context: {
+  role: RoleName;
+  provider: ProviderName;
+  modelId: string;
+  error: unknown;
+}): Promise<void> => {
+  const message = context.error instanceof Error ? context.error.message : String(context.error);
+  const entry = [
+    "---",
+    `## Provider Error (${new Date().toISOString()})`,
+    `role=${context.role} provider=${context.provider} modelId=${context.modelId}`,
+    message.slice(0, 4000)
+  ].join("\n");
+  await appendFile("./report.local", `\n${entry}\n`, "utf-8");
+};
+
+export const callModel = async (input: {
+  provider: ProviderName;
+  modelId: string;
+  messages: AgentMessage[];
+  temperature: number;
+  maxTokens: number;
+  jsonMode?: { schema: object };
+  signal?: AbortSignal;
+}): Promise<LLMResponse> => {
+  const providerInstance = getProvider(input.provider);
+  return providerInstance.call(
+    {
+      modelId: input.modelId,
+      messages: input.messages,
+      temperature: input.temperature,
+      maxTokens: input.maxTokens,
+      jsonMode: input.jsonMode
+    },
+    input.signal
+  );
 };
 
 export const callLLM = async (
@@ -45,14 +82,23 @@ export const callLLM = async (
 ): Promise<LLMResponse> => {
   try {
     const { provider, modelId, temperature, maxTokens } = getModelForRole(role, taskType, mode);
-    const providerInstance = getProvider(provider);
     try {
-      return await providerInstance.call({ modelId, messages, temperature, maxTokens }, signal);
-    } catch (_error) {
+      return await callModel({
+        provider,
+        modelId,
+        messages,
+        temperature,
+        maxTokens,
+        jsonMode: { schema: {} },
+        signal
+      });
+    } catch (error) {
+      await logProviderError({ role, provider, modelId, error });
       const fallback = getProvider("dummy");
       return fallback.call({ modelId: "dummy", messages, temperature, maxTokens }, signal);
     }
-  } catch (_error) {
+  } catch (error) {
+    await logProviderError({ role, provider: "dummy", modelId: "dummy", error });
     const fallback = getProvider("dummy");
     return fallback.call({ modelId: "dummy", messages, temperature: 0, maxTokens: 0 }, signal);
   }

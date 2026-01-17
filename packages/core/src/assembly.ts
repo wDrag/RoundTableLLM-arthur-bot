@@ -67,14 +67,19 @@ export const assembleOutputs = (scored: ScoredOutput[]): MergeResult => {
     }
   };
 
-  const baseUnits = extractUnits(base.content, base.role).map((unit) => ({
-    ...unit,
+  const baseUnits = base.raw.units.map((unit, index) => ({
+    id: unit.id || `${base.role.toUpperCase()}-${index + 1}`,
+    sourceRole: base.role,
     text: `${unit.text} [${base.role.toUpperCase()}]`
   }));
   baseUnits.forEach((unit) => addUnit(unit));
 
   valid.slice(1).forEach((item) => {
-    const units = extractUnits(item.content, item.role);
+    const units = item.raw.units.map((unit, index) => ({
+      id: unit.id || `${item.role.toUpperCase()}-${index + 1}`,
+      sourceRole: item.role,
+      text: unit.text
+    }));
     units.forEach((unit) => {
       const tagged = { ...unit, text: `${unit.text} [${item.role.toUpperCase()}]` };
       const reason = findHighRiskReason(tagged.text);

@@ -26,7 +26,7 @@ const roleOverridesShape = roleNameSchema.options.reduce(
   {} as Record<string, z.ZodTypeAny>
 );
 
-const taskTypeOverridesSchema = z.record(z.object(roleOverridesShape));
+const taskTypeOverridesSchema = z.record(z.object(roleOverridesShape).partial());
 
 export const llmConfigSchema = z.object({
   version: z.number().int().positive(),
@@ -47,12 +47,17 @@ export const llmConfigSchema = z.object({
     })
   }),
   models: z.object({
+    master: modelRoleSchema,
     roles: z.record(roleNameSchema, modelRoleSchema),
     taskTypeOverrides: taskTypeOverridesSchema.default({})
   }),
-  cost: z.object({
+  policy: z.object({
     normalMaxUsd: z.number().positive(),
-    deepMaxUsd: z.number().positive()
+    deepMaxUsd: z.number().positive(),
+    askUserThreshold: z.number().min(0).max(1),
+    verifierWakeThreshold: z.number().min(0).max(1),
+    tauHard: z.number().min(0).max(1),
+    tauSoft: z.number().min(0).max(1)
   })
 });
 
