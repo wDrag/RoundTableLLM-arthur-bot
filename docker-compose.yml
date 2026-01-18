@@ -3,10 +3,17 @@ services:
     build:
       context: .
       dockerfile: apps/master/Dockerfile
+    env_file:
+      - .env
     ports:
       - "8787:8787"
     environment:
       - PORT=8787
+      - MASTER_API_KEY=${MASTER_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_VERSION=${ANTHROPIC_VERSION}
+      - REQUEST_TIMEOUT_MS=${REQUEST_TIMEOUT_MS}
+      - RUNNER_CONCURRENCY=${RUNNER_CONCURRENCY}
     volumes:
       - master-data:/app/data
     healthcheck:
